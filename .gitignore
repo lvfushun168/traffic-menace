@@ -1,0 +1,40 @@
+# macOS / Windows
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+
+# IDE / editor metadata
+.idea/
+.vscode/
+*.iml
+
+# Godot generated cache and local state
+.godot/
+.mono/
+*.translation
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Exported builds and archives
+build/
+dist/
+exports/
+*.pck
+*.zip
+*.apk
+*.aab
+*.exe
+*.app
+*.dmg
+*.ipa
