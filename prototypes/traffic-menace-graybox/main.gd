@@ -27,12 +27,14 @@ const UPGRADE_FIRST_AVAILABLE_SECONDS: float = 10.0
 const UPGRADE_MIN_INTERVAL_SECONDS: float = 15.0
 const UPGRADE_MODAL_GAP_SECONDS: float = 3.0
 const MERGE_GATE_Y_RATIO: float = 0.62
-const MERGE_BASE_INTERVAL_START: float = 1.80
-const MERGE_BASE_INTERVAL_END: float = 1.15
-const MERGE_EVENT_INTERVAL_START: float = 0.90
-const MERGE_EVENT_INTERVAL_END: float = 0.60
-const MERGE_QUEUE_LIMIT: int = 8
-const MERGE_CAPACITY_BUFFER: int = 5
+const MERGE_BASE_INTERVAL_START: float = 1.35
+const MERGE_BASE_INTERVAL_END: float = 0.85
+const MERGE_EVENT_INTERVAL_START: float = 0.70
+const MERGE_EVENT_INTERVAL_END: float = 0.45
+const MERGE_QUEUE_LIMIT: int = 10
+const MERGE_CAPACITY_BUFFER: int = 7
+const MERGE_MAX_ACTIVE_PER_SIDE: int = 2
+const MERGE_JUNCTION_MIN_SPACING: float = 260.0
 const MERGE_ENTRY_OFFSET: float = 82.0
 const MERGE_ENTRY_Y_OFFSET: float = 84.0
 const MERGE_JUNCTION_START_Y: float = -260.0
@@ -48,6 +50,17 @@ const MERGE_REPLAN_INTERVAL: float = 0.35
 const MERGE_EXIT_DURATION: float = 26.0
 const MERGE_EXIT_SPEED_BONUS: float = 14.0
 const MERGE_YIELD_PROBE_DURATION: float = 1.60
+const REAR_CHASE_MIN_START_TIME: float = 12.0
+const REAR_CHASE_INTERVAL_START: float = 7.0
+const REAR_CHASE_INTERVAL_END: float = 4.5
+const REAR_CHASE_ACTIVE_LIMIT: int = 2
+const REAR_CHASE_CAPACITY_BUFFER: int = 2
+const REAR_CHASE_SPAWN_DISTANCE_MIN: float = 180.0
+const REAR_CHASE_SPAWN_DISTANCE_MAX: float = 280.0
+const REAR_CHASE_FRONT_CLEAR_DISTANCE: float = 360.0
+const REAR_CHASE_SPEED_GAP_MIN: float = 15.0
+const REAR_CHASE_SPEED_GAP_MAX: float = 25.0
+const REAR_CHASE_MAX_SPEED: float = 70.0
 const PLAYER_REAR_BUFFER: float = 18.0
 const PLAYER_LATERAL_CLEARANCE: float = 4.0
 const PLAYER_AVOID_DURATION: float = 0.75
@@ -225,6 +238,8 @@ var merge_yield_probe_car_id: int = -1
 var merge_yield_probe_side: int = 0
 var merge_yield_probe_timer: float = 0.0
 var merge_junctions: Array[Dictionary] = []
+var rear_chase_clock: float = 0.0
+var rear_chase_spawned_count: int = 0
 
 var traffic: Array[Dictionary] = []
 var hazards: Array[Dictionary] = []
@@ -393,6 +408,8 @@ func reset_run() -> void:
 	merge_yield_probe_side = 0
 	merge_yield_probe_timer = 0.0
 	merge_junctions.clear()
+	rear_chase_clock = 0.0
+	rear_chase_spawned_count = 0
 	traffic.clear()
 	hazards.clear()
 	pickups.clear()
@@ -832,6 +849,7 @@ func _spawn_traffic(kind: String, lane: int, y: float, speed: float, aggressive:
 		"aggressive": is_aggressive,
 		"driver_type": resolved_driver_type,
 		"spawn_origin": spawn_origin,
+		"rear_chase": spawn_origin == "REAR CHASE",
 		"merge_side": 0,
 		"merge_target_lane": resolved_lane,
 		"merge_junction_id": -1,
@@ -1434,6 +1452,7 @@ func _build_traffic_snapshot() -> Array[Dictionary]:
 			"lane": int(car.get("lane", 0)),
 			"target_lane": int(car.get("target_lane", car.get("lane", 0))),
 			"spawn_origin": str(car.get("spawn_origin", "MAIN")),
+			"rear_chase": bool(car.get("rear_chase", false)),
 			"merge_side": int(car.get("merge_side", 0)),
 			"merge_target_lane": int(car.get("merge_target_lane", car.get("target_lane", car.get("lane", 0)))),
 			"merge_junction_id": int(car.get("merge_junction_id", -1)),
@@ -2351,6 +2370,21 @@ func _merge_side_has_active_junction(side: int) -> bool:
 	return false
 
 
+## 判断同侧是否还能生成新的动态道路段；数量和纵向间距同时满足才允许推进队列。
+func _merge_side_can_spawn_junction(side: int) -> bool:
+	var active_count: int = 0
+	for junction in merge_junctions:
+		if int(junction.get("side", 0)) != side or str(junction.get("phase", "")) == "EXIT":
+			continue
+		active_count += 1
+		if active_count >= MERGE_MAX_ACTIVE_PER_SIDE:
+			return false
+		var junction_y: float = float(junction.get("y", MERGE_JUNCTION_START_Y))
+		if junction_y - MERGE_JUNCTION_START_Y < MERGE_JUNCTION_MIN_SPACING:
+			return false
+	return true
+
+
 ## 同步修改车辆与动态道路段的阶段和是否继续随镜头移动的标记。
 func _set_merge_junction_phase(car: Dictionary, phase: String, moving: bool) -> void:
 	car["merge_phase"] = phase
@@ -2667,7 +2701,7 @@ func _try_spawn_merge_car(max_cars: int, difficulty: float) -> bool:
 		return false
 	var merge_y: float = _merge_gate_y()
 	var side: int = merge_side_toggle
-	if _merge_side_has_active_junction(side):
+	if not _merge_side_can_spawn_junction(side):
 		return false
 	var entry_x: float = _merge_entry_x(side)
 	var junction_start_y: float = MERGE_JUNCTION_START_Y
@@ -2732,6 +2766,93 @@ func _try_spawn_merge_car(max_cars: int, difficulty: float) -> bool:
 	merge_spawned_count += 1
 	merge_display_lane = target_lane
 	merge_side_toggle *= -1
+	return true
+
+
+## 统计当前仍在场的后方追赶车辆，撞毁车辆不再占用追赶名额。
+func _active_rear_chase_count() -> int:
+	var active_count: int = 0
+	for car in traffic:
+		if bool(car.get("crashed", false)):
+			continue
+		if bool(car.get("rear_chase", false)) or str(car.get("spawn_origin", "")) == "REAR CHASE":
+			active_count += 1
+	return active_count
+
+
+## 统计普通主路车辆，用于判断玩家当前是否处在低密度路段。
+func _active_main_traffic_count() -> int:
+	var active_count: int = 0
+	for car in traffic:
+		if not bool(car.get("crashed", false)) and str(car.get("spawn_origin", "MAIN")) == "MAIN":
+			active_count += 1
+	return active_count
+
+
+## 判断玩家前方是否有近距离车流、封道或障碍，避免在已经拥堵时额外制造追赶压力。
+func _rear_chase_front_is_clear() -> bool:
+	var player_lane_at: int = _nearest_lane(player_x)
+	var player_size: Vector2 = _player_body_size()
+	for car in traffic:
+		if bool(car.get("crashed", false)):
+			continue
+		var car_y: float = float(car.get("y", player_y))
+		if car_y >= player_y or player_y - car_y > REAR_CHASE_FRONT_CLEAR_DISTANCE:
+			continue
+		var car_size: Vector2 = _car_dimensions(str(car.get("kind", "SEDAN")))
+		if _horizontal_overlap(float(car.get("x", player_x)), car_size.x, player_x, player_size.x, PLAYER_LATERAL_CLEARANCE):
+			return false
+	for hazard in hazards:
+		if not bool(hazard.get("active", true)) or not bool(hazard.get("blocks_route", false)):
+			continue
+		var hazard_y: float = float(hazard.get("y", player_y))
+		if hazard_y < player_y and player_y - hazard_y <= REAR_CHASE_FRONT_CLEAR_DISTANCE and _hazard_overlaps_lane(hazard, player_lane_at):
+			return false
+	for road_event in road_events:
+		if not bool(road_event.get("active", true)) or str(road_event.get("type", "")) == "BRANCH MERGE":
+			continue
+		var event_y: float = float(road_event.get("y", player_y))
+		if event_y < player_y and player_y - event_y <= REAR_CHASE_FRONT_CLEAR_DISTANCE and _road_event_blocks_lane(road_event, player_lane_at):
+			return false
+	return true
+
+
+## 判断当前是否适合从玩家后方补入一辆激进车辆。
+func _rear_chase_opportunity_open(max_cars: int) -> bool:
+	if run_time < REAR_CHASE_MIN_START_TIME:
+		return false
+	if _active_rear_chase_count() >= REAR_CHASE_ACTIVE_LIMIT:
+		return false
+	if _active_traffic_count() >= max_cars + REAR_CHASE_CAPACITY_BUFFER:
+		return false
+	var density_limit: int = maxi(3, int(floor(float(max_cars) * 0.70)))
+	if _active_main_traffic_count() > density_limit:
+		return false
+	return _rear_chase_front_is_clear()
+
+
+## 在屏幕底部安全生成一辆激进追赶车，后续接近与超车交给现有交通 FSM。
+func _try_spawn_rear_chase_car(max_cars: int) -> bool:
+	if not _rear_chase_opportunity_open(max_cars):
+		return false
+	var lane: int = _nearest_lane(player_x)
+	var spawn_y: float = screen_size.y + rng.randf_range(REAR_CHASE_SPAWN_DISTANCE_MIN, REAR_CHASE_SPAWN_DISTANCE_MAX)
+	var aggressive_profile: Dictionary = _driver_profile("AGGRESSIVE")
+	var speed_gap: float = rng.randf_range(REAR_CHASE_SPEED_GAP_MIN, REAR_CHASE_SPEED_GAP_MAX)
+	var chase_speed: float = clampf(player_speed + speed_gap, float(aggressive_profile["speed_min"]), REAR_CHASE_MAX_SPEED)
+	if not _spawn_gap_is_clear("SEDAN", lane, spawn_y, chase_speed, "AGGRESSIVE"):
+		return false
+	_spawn_traffic("SEDAN", lane, spawn_y, chase_speed, true, "AGGRESSIVE", "REAR CHASE")
+	var car: Dictionary = traffic[traffic.size() - 1]
+	car["rear_chase"] = true
+	car["initial_behind"] = true
+	car["opening_grace_remaining"] = 0.0
+	car["cruise_offset"] = 0.0
+	car["lateral_target_x"] = _lane_x(lane)
+	car["base_speed"] = chase_speed
+	car["speed"] = chase_speed
+	car["speed_command"] = chase_speed
+	rear_chase_spawned_count += 1
 	return true
 
 
@@ -3823,6 +3944,17 @@ func _update_spawn_logic(delta: float) -> void:
 	var difficulty: float = clampf(run_time / RUN_LIMIT_SECONDS, 0.0, 1.0)
 	var max_cars: int = _traffic_target_count(run_time)
 	_update_merge_source(delta, difficulty, max_cars)
+	if run_time < REAR_CHASE_MIN_START_TIME:
+		rear_chase_clock = 0.0
+	else:
+		rear_chase_clock += delta
+		var rear_chase_interval: float = lerpf(REAR_CHASE_INTERVAL_START, REAR_CHASE_INTERVAL_END, difficulty)
+		if rear_chase_clock >= rear_chase_interval:
+			if _try_spawn_rear_chase_car(max_cars):
+				rear_chase_clock = 0.0
+			else:
+				# 条件暂时不满足时保留大部分计时，空间或前方路线一旦释放即可补入。
+				rear_chase_clock = rear_chase_interval * 0.82
 	var spawn_interval: float = maxf(0.65, 1.45 - difficulty * 0.70)
 	if spawn_clock >= spawn_interval and _active_traffic_count() < max_cars:
 		var lane: int = rng.randi_range(0, LANE_COUNT - 1)

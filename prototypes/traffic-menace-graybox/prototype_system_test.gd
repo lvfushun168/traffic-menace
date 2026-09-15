@@ -35,6 +35,8 @@ func _init() -> void:
 	var crashed_seen: bool = false
 	var merge_car_seen: bool = false
 	var merge_after_crash_seen: bool = false
+	var rear_chase_seen: bool = false
+	var rear_chase_overtake_seen: bool = false
 	for _frame in range(3600):
 		scene.call("_physics_process", 1.0 / 60.0)
 		if bool(scene.get("item_replacement_active")):
@@ -54,6 +56,11 @@ func _init() -> void:
 				merge_car_seen = true
 				if crashed_seen:
 					merge_after_crash_seen = true
+			if bool(car.get("rear_chase", false)) or str(car.get("spawn_origin", "")) == "REAR CHASE":
+				rear_chase_seen = true
+				var rear_state: String = str(car.get("state", ""))
+				if bool(car.get("attempted_pass", false)) or rear_state == "PREPARE OVERTAKE" or rear_state == "LANE CHANGE" or rear_state == "PASS PLAYER":
+					rear_chase_overtake_seen = true
 			if str(car.get("state", "")) == "BLOCKED":
 				blocked_seen = true
 
@@ -78,8 +85,8 @@ func _init() -> void:
 	for car in scene.get("traffic") as Array:
 		crash_cleanup_ok = crash_cleanup_ok and not (bool(car.get("crashed", false)) and float(car.get("crash_time", 0.0)) >= 3.0)
 	var upgrade_gate_test_ok: bool = _test_upgrade_cadence(scene)
-	print("GRAYBOX_SYSTEM_TEST initial_cars=%s max_cars=%s road_events=%s cars=%s score=%s max_trapped=%s blocked=%s crashed=%s merge_seen=%s merge_after_crash=%s merge_spawned=%s merge_queue_peak=%s multiplier=%s upgrade_index=%s upgrade_times=%s upgrade_cadence=%s target_curve=%s lod_seen=%s crash_cleanup=%s upgrade_gate=%s" % [initial_traffic_count, max_traffic_count, road_event_count, car_count, score, max_trapped, blocked_seen, crashed_seen, merge_car_seen, merge_after_crash_seen, merge_spawned_count, merge_queue_peak, final_multiplier, final_upgrade_index, upgrade_times, upgrade_cadence_ok, traffic_target_curve_ok, traffic_lod_seen, crash_cleanup_ok, upgrade_gate_test_ok])
-	quit(0 if initial_traffic_count == 6 and road_event_count > 0 and score > 0 and max_trapped > 0 and blocked_seen and crashed_seen and merge_car_seen and merge_after_crash_seen and merge_spawned_count > 0 and upgrade_cadence_ok and traffic_target_curve_ok and traffic_lod_seen and crash_cleanup_ok and upgrade_gate_test_ok else 1)
+	print("GRAYBOX_SYSTEM_TEST initial_cars=%s max_cars=%s road_events=%s cars=%s score=%s max_trapped=%s blocked=%s crashed=%s merge_seen=%s merge_after_crash=%s merge_spawned=%s merge_queue_peak=%s rear_chase_seen=%s rear_chase_overtake=%s rear_chase_spawned=%s multiplier=%s upgrade_index=%s upgrade_times=%s upgrade_cadence=%s target_curve=%s lod_seen=%s crash_cleanup=%s upgrade_gate=%s" % [initial_traffic_count, max_traffic_count, road_event_count, car_count, score, max_trapped, blocked_seen, crashed_seen, merge_car_seen, merge_after_crash_seen, merge_spawned_count, merge_queue_peak, rear_chase_seen, rear_chase_overtake_seen, int(scene.get("rear_chase_spawned_count")), final_multiplier, final_upgrade_index, upgrade_times, upgrade_cadence_ok, traffic_target_curve_ok, traffic_lod_seen, crash_cleanup_ok, upgrade_gate_test_ok])
+	quit(0 if initial_traffic_count == 6 and road_event_count > 0 and score > 0 and max_trapped > 0 and blocked_seen and crashed_seen and merge_car_seen and merge_after_crash_seen and merge_spawned_count > 0 and rear_chase_seen and rear_chase_overtake_seen and upgrade_cadence_ok and traffic_target_curve_ok and traffic_lod_seen and crash_cleanup_ok and upgrade_gate_test_ok else 1)
 
 
 ## 验证分数提前越过多个阈值时，升级仍按最短游戏时间间隔逐个出现。
