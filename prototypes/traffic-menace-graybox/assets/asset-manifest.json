@@ -1,6 +1,14 @@
 {
   "project": "Traffic Menace",
   "visual_target": "modern_pixel_top_down_city_road",
+  "pixel_art_baseline": {
+    "logical_canvas": "640x360",
+    "reference_display": "1280x720",
+    "scale_policy": "integer_2x_when_possible",
+    "filter": "nearest",
+    "runtime_rule": "no_antialiasing_or_subpixel_visual_motion",
+    "font_policy": "supported_chinese_pixel_font_required_for_production"
+  },
   "assets": [
     {
       "id": "road_surface",
@@ -25,6 +33,17 @@
       "source": "in-house authored SVG",
       "license": "project-owned",
       "status": "approved for graybox"
+    },
+    {
+      "id": "ui_font_graybox",
+      "path": "ui_font.ttf",
+      "role": "temporary graybox UI font",
+      "format": "ttf",
+      "family": "Arial Unicode MS",
+      "filter": "not_approved_for_production_pixel_ui",
+      "source": "existing graybox file; provenance to verify",
+      "license": "to verify",
+      "status": "placeholder; replace with a Chinese pixel font"
     }
   ]
 }
