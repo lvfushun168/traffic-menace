@@ -33,7 +33,15 @@ const MERGE_EVENT_INTERVAL_START: float = 0.90
 const MERGE_EVENT_INTERVAL_END: float = 0.60
 const MERGE_QUEUE_LIMIT: int = 8
 const MERGE_CAPACITY_BUFFER: int = 5
-const MERGE_ENTRY_OFFSET: float = 64.0
+const MERGE_ENTRY_OFFSET: float = 82.0
+const MERGE_ENTRY_Y_OFFSET: float = 84.0
+const MERGE_JUNCTION_START_Y: float = -260.0
+const MERGE_JUNCTION_CULL_MARGIN: float = 220.0
+const MERGE_RAMP_WIDTH: float = 78.0
+const MERGE_RAMP_SHOULDER_WIDTH: float = 92.0
+const MERGE_PATH_SAMPLE_COUNT: int = 16
+const MERGE_COMMIT_PROGRESS: float = 0.32
+const MERGE_PATH_TIME_PADDING: float = 0.14
 const MERGE_LATERAL_SPEED: float = 300.0
 const MERGE_GAP_PADDING: float = 4.0
 const MERGE_REPLAN_INTERVAL: float = 0.35
@@ -148,6 +156,8 @@ const COLOR_SIDEWALK := Color("#17222d")
 const COLOR_ROAD := Color("#26323b")
 const COLOR_ROAD_EDGE := Color("#64717a")
 const COLOR_LANE := Color("#9ca8ae")
+const COLOR_CURB := Color("#4c5b61")
+const COLOR_MERGE := Color("#63c7d9")
 const COLOR_ACCENT := Color("#58e1c1")
 const COLOR_WARNING := Color("#ffcb5c")
 const COLOR_DANGER := Color("#ff6b6b")
@@ -157,6 +167,8 @@ const COLOR_PANEL := Color(0.035, 0.065, 0.10, 0.94)
 var rng := RandomNumberGenerator.new()
 var screen_size: Vector2 = Vector2(1280, 720)
 var ui_font: Font
+var road_surface_texture: Texture2D
+var sidewalk_surface_texture: Texture2D
 var player_y: float = 180.0
 var road_left: float = 240.0
 var road_width: float = ROAD_WIDTH_REFERENCE
@@ -212,6 +224,7 @@ var merge_yield_probe_lane: int = -1
 var merge_yield_probe_car_id: int = -1
 var merge_yield_probe_side: int = 0
 var merge_yield_probe_timer: float = 0.0
+var merge_junctions: Array[Dictionary] = []
 
 var traffic: Array[Dictionary] = []
 var hazards: Array[Dictionary] = []
@@ -247,11 +260,74 @@ func _ready() -> void:
 	var bundled_font: Font = load("res://ui_font.ttf") as Font
 	if bundled_font != null:
 		ui_font = bundled_font
+	_load_road_textures()
 	get_viewport().size_changed.connect(_on_viewport_resized)
 	_on_viewport_resized()
 	_build_item_definitions()
 	_build_upgrade_pool()
 	reset_run()
+
+
+## 创建可平铺的道路材质；窗口运行时优先读取 SVG，无窗口环境使用程序纹理兜底。
+func _load_road_textures() -> void:
+	var display_server_name: String = DisplayServer.get_name().to_lower()
+	if display_server_name == "headless" or OS.has_feature("headless") or OS.has_feature("movie"):
+		return
+	road_surface_texture = load("res://assets/road/road_surface.svg") as Texture2D
+	sidewalk_surface_texture = load("res://assets/road/sidewalk_surface.svg") as Texture2D
+	if road_surface_texture == null:
+		road_surface_texture = _build_road_surface_texture()
+	if sidewalk_surface_texture == null:
+		sidewalk_surface_texture = _build_sidewalk_surface_texture()
+
+
+## 生成带低对比像素磨损的沥青纹理，车道线由运行时单独绘制。
+func _build_road_surface_texture() -> Texture2D:
+	var image: Image = Image.create(128, 256, false, Image.FORMAT_RGBA8)
+	image.fill(Color("#26343a"))
+	for y in range(256):
+		for x in range(128):
+			var hash_value: int = posmod(x * 17 + y * 31 + (x / 8) * 13, 257)
+			if hash_value == 7 or hash_value == 53:
+				image.set_pixel(x, y, Color("#35464c"))
+			elif hash_value == 101 or hash_value == 181:
+				image.set_pixel(x, y, Color("#1f2c32"))
+		for x in range(0, 128, 32):
+			image.set_pixel(x, y, Color("#2c3b41"))
+		if y == 128 or y == 129 or y == 134:
+			for x in range(128):
+				image.set_pixel(x, y, Color("#1d292f"))
+	var patch_rects: Array[Rect2i] = [
+		Rect2i(11, 22, 23, 3), Rect2i(75, 14, 16, 4), Rect2i(43, 48, 31, 3),
+		Rect2i(94, 69, 22, 4), Rect2i(7, 93, 16, 4), Rect2i(54, 112, 19, 3),
+		Rect2i(23, 153, 28, 4), Rect2i(83, 174, 25, 3), Rect2i(8, 201, 22, 3),
+		Rect2i(48, 224, 35, 4),
+	]
+	for patch_rect in patch_rects:
+		for y in range(patch_rect.position.y, patch_rect.end.y):
+			for x in range(patch_rect.position.x, patch_rect.end.x):
+				image.set_pixel(x, y, Color("#1c282e"))
+	return ImageTexture.create_from_image(image)
+
+
+## 生成混凝土板与路肩纹理，使用明显但低亮度的拼缝提示道路边界。
+func _build_sidewalk_surface_texture() -> Texture2D:
+	var image: Image = Image.create(96, 256, false, Image.FORMAT_RGBA8)
+	image.fill(Color("#17242c"))
+	for y in range(256):
+		for x in range(96):
+			if x == 46 or x == 47:
+				image.set_pixel(x, y, Color("#101b22"))
+			elif (x * 11 + y * 7) % 149 == 9:
+				image.set_pixel(x, y, Color("#2c3d45"))
+	for y in [59, 60, 61, 123, 124, 125, 187, 188, 189]:
+		for x in range(96):
+			image.set_pixel(x, y, Color("#101b22"))
+	for y in [12, 13, 14, 30, 31, 32, 80, 81, 82, 98, 99, 100, 151, 152, 153, 166, 167, 168, 215, 216, 217, 231, 232, 233]:
+		for x in range(8, 32):
+			if (x + y) % 5 < 3:
+				image.set_pixel(x, y, Color("#2c3d45"))
+	return ImageTexture.create_from_image(image)
 
 
 func _on_viewport_resized() -> void:
@@ -316,6 +392,7 @@ func reset_run() -> void:
 	merge_yield_probe_car_id = -1
 	merge_yield_probe_side = 0
 	merge_yield_probe_timer = 0.0
+	merge_junctions.clear()
 	traffic.clear()
 	hazards.clear()
 	pickups.clear()
@@ -604,6 +681,7 @@ func _physics_process(delta: float) -> void:
 	player_collision_cooldown = maxf(player_collision_cooldown - delta, 0.0)
 	_update_player(delta)
 	road_scroll = fmod(road_scroll + player_speed * PLAYER_SPEED_SCALE * delta, 96.0)
+	_update_merge_junctions(delta)
 	_update_active_effects(delta)
 	_update_hazards(delta)
 	_update_loose_props(delta)
@@ -697,6 +775,7 @@ func _spawn_traffic(kind: String, lane: int, y: float, speed: float, aggressive:
 		resolved_driver_type = "AGGRESSIVE" if aggressive else ("CAUTIOUS" if rng.randf() < 0.32 else "NORMAL")
 	var is_aggressive: bool = resolved_driver_type == "AGGRESSIVE"
 	var resolved_lane: int = clampi(lane, 0, LANE_COUNT - 1)
+	var is_merge_spawn: bool = spawn_origin == "MERGE"
 	var divider_side: int = _choose_divider_side(resolved_lane)
 	var cruise_offset: float = _driver_cruise_offset(resolved_driver_type, divider_side)
 	var initial_x: float = _clamp_car_center_x(_lane_x(resolved_lane) + cruise_offset * lane_width, _car_dimensions(kind).x)
@@ -755,8 +834,16 @@ func _spawn_traffic(kind: String, lane: int, y: float, speed: float, aggressive:
 		"spawn_origin": spawn_origin,
 		"merge_side": 0,
 		"merge_target_lane": resolved_lane,
+		"merge_junction_id": -1,
+		"merge_phase": "CRUISE",
 		"merge_entry_x": _lane_x(resolved_lane),
 		"merge_gate_y": y,
+		"merge_start_y": y,
+		"merge_progress": 0.0 if is_merge_spawn else 1.0,
+		"merge_elapsed": 0.0,
+		"merge_duration": 0.0,
+		"merge_flow_offset": 0.0,
+		"merge_exit_attached": false,
 		"initial_behind": y > player_y,
 		"attempted_pass": false,
 		"passed": false,
@@ -1349,6 +1436,13 @@ func _build_traffic_snapshot() -> Array[Dictionary]:
 			"spawn_origin": str(car.get("spawn_origin", "MAIN")),
 			"merge_side": int(car.get("merge_side", 0)),
 			"merge_target_lane": int(car.get("merge_target_lane", car.get("target_lane", car.get("lane", 0)))),
+			"merge_junction_id": int(car.get("merge_junction_id", -1)),
+			"merge_phase": str(car.get("merge_phase", "CRUISE")),
+			"merge_start_y": float(car.get("merge_start_y", car.get("y", 0.0))),
+			"merge_progress": float(car.get("merge_progress", 1.0)),
+			"merge_elapsed": float(car.get("merge_elapsed", 0.0)),
+			"merge_duration": float(car.get("merge_duration", 0.0)),
+			"merge_flow_offset": float(car.get("merge_flow_offset", 0.0)),
 			"route_plan": car.get("route_plan", []),
 			"route_index": int(car.get("route_index", 0)),
 			"x": float(car.get("x", 0.0)),
@@ -1559,7 +1653,7 @@ func _update_traffic(delta: float) -> void:
 			_advance_distant_traffic(car, delta)
 			continue
 		traffic_ai_full_updates += 1
-		if str(car.get("state", "")) == "MERGING" or str(car.get("state", "")) == "MERGE WAIT":
+		if str(car.get("state", "")) == "MERGE APPROACH" or str(car.get("state", "")) == "MERGING" or str(car.get("state", "")) == "MERGE WAIT":
 			_update_merge_traffic(car, delta, traffic_snapshot)
 			continue
 
@@ -1970,7 +2064,8 @@ func _plan_merge_yield_request(snapshot: Array = []) -> void:
 		if side_value == 0:
 			continue
 		var entry_x: float = _merge_entry_x(side_value)
-		for lane in range(LANE_COUNT):
+		var candidate_lanes: Array[int] = [_merge_entry_lane(side_value)]
+		for lane in candidate_lanes:
 			var candidate_x: float = _lane_x(lane)
 			if _lane_blocked_by_player(lane, gate_y, "SEDAN", candidate_x):
 				continue
@@ -2025,13 +2120,25 @@ func _plan_merge_yield_request(snapshot: Array = []) -> void:
 
 
 func _update_merge_traffic(car: Dictionary, delta: float, snapshot: Array = []) -> void:
-	var target_lane: int = clampi(int(car.get("merge_target_lane", car.get("lane", 2))), 0, LANE_COUNT - 1)
+	var merge_side: int = int(car.get("merge_side", -1))
+	if merge_side == 0:
+		merge_side = -1 if float(car.get("merge_entry_x", road_left)) < road_left else 1
+	var target_lane: int = _merge_entry_lane(merge_side)
 	var driver_type: String = str(car.get("driver_type", "NORMAL"))
 	var profile: Dictionary = _driver_profile(driver_type)
 	var car_kind: String = str(car["kind"])
-	var car_y: float = float(car["y"])
+	var junction: Dictionary = _merge_junction_for_car(car)
+	var gate_y: float = float(car.get("merge_gate_y", _merge_gate_y()))
+	var has_junction: bool = not junction.is_empty()
+	var merge_phase: String = str(car.get("merge_phase", "MERGING"))
+	if has_junction:
+		gate_y = float(junction.get("y", gate_y))
+		merge_phase = str(junction.get("phase", merge_phase))
+		car["merge_gate_y"] = gate_y
+		car["merge_start_y"] = gate_y + MERGE_ENTRY_Y_OFFSET
+	var entry_x: float = float(car.get("merge_entry_x", _merge_entry_x(merge_side)))
+	var entry_y: float = gate_y + MERGE_ENTRY_Y_OFFSET
 	var ignored_id: int = int(car.get("id", -1))
-	var merge_side: int = int(car.get("merge_side", 0))
 	car["pressure"] = maxf(float(car.get("pressure", 0.0)) - delta, 0.0)
 	car["contact_cooldown"] = maxf(float(car.get("contact_cooldown", 0.0)) - delta, 0.0)
 	car["replan_cooldown"] = maxf(float(car.get("replan_cooldown", 0.0)) - delta, 0.0)
@@ -2043,28 +2150,62 @@ func _update_merge_traffic(car: Dictionary, delta: float, snapshot: Array = []) 
 	if float(car.get("speed_shock_memory_timer", 0.0)) <= 0.0:
 		car["speed_shock_source"] = ""
 	car["player_avoid_timer"] = maxf(float(car.get("player_avoid_timer", 0.0)) - delta, 0.0)
+	car["indicator_clock"] = float(car.get("indicator_clock", 0.0)) + delta
+	if has_junction and merge_phase == "APPROACH":
+		# 合流道路段抵达判定线前，车辆只跟随道路段一起前进，不提前检查或跨入主路。
+		car["state"] = "MERGE APPROACH"
+		car["merge_phase"] = "APPROACH"
+		car["x"] = entry_x
+		car["previous_x"] = entry_x
+		car["lateral_target_x"] = entry_x
+		car["y"] = entry_y
+		car["merge_progress"] = 0.0
+		car["merge_elapsed"] = 0.0
+		car["merge_flow_offset"] = 0.0
+		car["indicator"] = -merge_side
+		var approach_speed: float = minf(float(car.get("base_speed", 40.0)), player_speed + 4.0)
+		if float(car.get("speed_shock_timer", 0.0)) > 0.0:
+			approach_speed = minf(approach_speed, float(car.get("speed_shock_target", NPC_SPEED_SHOCK_TARGET)))
+		car["speed"] = move_toward(float(car.get("speed", approach_speed)), approach_speed, 80.0 * delta)
+		car["speed_command"] = approach_speed
+		if gate_y < _merge_gate_y():
+			return
+		merge_phase = "MERGING"
+		_set_merge_junction_phase(car, "MERGING", true)
+		car["merge_phase"] = merge_phase
 	if str(car.get("state", "")) == "MERGE WAIT" and float(car.get("replan_cooldown", 0.0)) <= 0.0:
 		var replanned_lane: int = _choose_merge_target_lane(
-			car_y,
+			gate_y,
 			car_kind,
 			float(car.get("speed", 0.0)),
 			ignored_id,
 			merge_side,
-			float(car.get("x", _merge_entry_x(merge_side))),
+			entry_x,
 			driver_type
 		)
 		car["replan_cooldown"] = MERGE_REPLAN_INTERVAL
-		if replanned_lane >= 0 and replanned_lane != target_lane:
-			target_lane = replanned_lane
-			car["merge_target_lane"] = target_lane
-			car["target_lane"] = target_lane
-			car["maneuver_reason"] = "MERGE_REPLAN"
+		if replanned_lane < 0:
+			car["maneuver_reason"] = "MERGE_WAIT_GAP"
 			car["wait_timer"] = 0.0
-	var target_x: float = _overtake_target_x(car, target_lane)
-	var route_open: bool = _player_target_is_safe(car, target_x) and _overtake_route_is_clear(car, target_lane, target_x, 220.0)
-	var merge_committed: bool = str(car.get("state", "")) == "MERGING" and float(car.get("lane_change_commit_timer", 0.0)) > 0.0
-	var gap_open: bool = merge_committed or _merge_lane_gap_clear(target_lane, car_y, car_kind, ignored_id, target_x, snapshot, -1.0, -1.0, driver_type)
+	car["merge_target_lane"] = target_lane
+	car["target_lane"] = target_lane
+	car["merge_side"] = merge_side
+	var target_x: float = _lane_x(target_lane)
+	car["lateral_target_x"] = target_x
 	var merge_state: String = str(car.get("state", "MERGE WAIT"))
+	if merge_phase == "WAIT":
+		merge_state = "MERGE WAIT"
+	elif merge_phase == "MERGING":
+		merge_state = "MERGING"
+	var merge_progress: float = clampf(float(car.get("merge_progress", 0.0)), 0.0, 1.0)
+	var merge_lateral_speed: float = minf(MERGE_LATERAL_SPEED, float(profile["lateral_speed"]) * 1.35)
+	var merge_duration: float = float(car.get("merge_duration", 0.0))
+	if merge_duration <= 0.0:
+		merge_duration = absf(target_x - entry_x) / maxf(merge_lateral_speed, 1.0) + MERGE_PATH_TIME_PADDING
+		car["merge_duration"] = merge_duration
+	var merge_committed: bool = merge_state == "MERGING" and merge_progress >= MERGE_COMMIT_PROGRESS
+	var route_open: bool = _player_target_is_safe(car, target_x) and _overtake_route_is_clear(car, target_lane, target_x, 220.0)
+	var gap_open: bool = merge_committed or _merge_lane_gap_clear(target_lane, gate_y, car_kind, ignored_id, target_x, snapshot, -1.0, entry_x, driver_type)
 	var merge_approach_speed: float = minf(float(car.get("base_speed", 40.0)), player_speed + 4.0)
 	var desired_speed: float = player_speed if merge_state == "MERGE WAIT" else merge_approach_speed
 	if float(car.get("speed_shock_timer", 0.0)) > 0.0:
@@ -2077,42 +2218,65 @@ func _update_merge_traffic(car: Dictionary, delta: float, snapshot: Array = []) 
 			desired_speed = minf(desired_speed, follow_speed_limit)
 			if str(car.get("brake_reason", "")).is_empty():
 				car["brake_reason"] = "FOLLOW"
-	if route_open and gap_open:
+	if (route_open and gap_open) or merge_committed:
 		car["state"] = "MERGING"
-		car["lateral_target_x"] = target_x
-		var merge_lateral_speed: float = minf(MERGE_LATERAL_SPEED, float(profile["lateral_speed"]) * 1.35)
-		if not merge_committed:
-			car["lane_change_commit_timer"] = maxf(float(car.get("lane_change_commit_timer", 0.0)), absf(target_x - float(car.get("x", target_x))) / maxf(merge_lateral_speed, 1.0) + 0.08)
-		car["x"] = move_toward(float(car["x"]), target_x, merge_lateral_speed * delta)
+		car["lane_reservation"] = target_lane
+		car["lane_reservation_timer"] = maxf(float(car.get("lane_reservation_timer", 0.0)), merge_duration)
+		car["merge_elapsed"] = float(car.get("merge_elapsed", 0.0)) + delta
+		var previous_y: float = float(car.get("y", entry_y))
 		_advance_traffic_position(car, desired_speed, delta, 75.0, snapshot)
-		if absf(float(car["x"]) - target_x) < 8.0:
+		var flow_delta: float = float(car.get("y", previous_y)) - previous_y
+		car["merge_flow_offset"] = float(car.get("merge_flow_offset", 0.0)) + flow_delta
+		merge_progress = clampf(float(car.get("merge_elapsed", 0.0)) / maxf(merge_duration, 0.001), 0.0, 1.0)
+		car["merge_progress"] = merge_progress
+		var merge_point: Vector2 = _merge_path_point_for_car(car, merge_progress)
+		car["x"] = merge_point.x
+		car["y"] = merge_point.y + float(car.get("merge_flow_offset", 0.0))
+		car["merge_phase"] = "MERGING"
+		_set_merge_junction_phase(car, "MERGING", true)
+		if merge_progress >= 1.0:
 			car["x"] = target_x
+			car["y"] = gate_y + float(car.get("merge_flow_offset", 0.0))
 			car["lane"] = target_lane
 			car["target_lane"] = target_lane
+			car["merge_target_lane"] = target_lane
 			car["state"] = "CRUISE"
 			car["merge_completed"] = true
+			car["merge_exit_attached"] = true
 			car["merge_exit_timer"] = MERGE_EXIT_DURATION
 			car["merge_exit_speed"] = player_speed + MERGE_EXIT_SPEED_BONUS
 			car["merge_exit_cruise_offset"] = float(car.get("merge_cruise_offset", 0.0))
 			car["merge_exit_offset_pending"] = true
-			car["merge_exit_clear_y"] = float(car.get("y", car_y)) - 180.0
+			car["merge_exit_clear_y"] = float(car.get("y", gate_y)) - 180.0
 			car["merge_flow_floor"] = maxf(player_speed, 40.0)
 			car["cruise_offset"] = 0.0
 			car["indicator"] = 0
 			car["replan_cooldown"] = 0.0
 			car["lane_change_commit_timer"] = 0.0
+			car["lane_reservation"] = -1
+			car["lane_reservation_timer"] = 0.0
+			car["merge_phase"] = "EXIT"
+			_set_merge_junction_phase(car, "EXIT", true)
 			if run_time - merge_last_feedback_time > 2.0:
 				merge_last_feedback_time = run_time
 				_push_message("支路车辆汇入  /  车流补充", COLOR_INFO, 1.4)
-				_add_floating_text(Vector2(target_x, car_y), "汇入 +1", COLOR_INFO, 0.9)
+				_add_floating_text(Vector2(target_x, gate_y), "汇入 L%d" % (target_lane + 1), COLOR_INFO, 0.9)
 	else:
 		car["state"] = "MERGE WAIT"
+		car["merge_phase"] = "WAIT"
+		_set_merge_junction_phase(car, "WAIT", false)
 		car["lane_change_commit_timer"] = 0.0
-		var merge_return_speed: float = minf(MERGE_LATERAL_SPEED, float(profile["lateral_speed"]) * 1.35)
-		var entry_x: float = float(car.get("merge_entry_x", car["x"]))
+		car["lane_reservation"] = -1
+		car["lane_reservation_timer"] = 0.0
 		car["lateral_target_x"] = entry_x
-		car["x"] = move_toward(float(car["x"]), entry_x, merge_return_speed * delta)
-		_advance_traffic_position(car, player_speed, delta, 80.0, [])
+		car["x"] = entry_x
+		car["y"] = entry_y
+		car["merge_progress"] = 0.0
+		car["merge_elapsed"] = 0.0
+		car["merge_flow_offset"] = 0.0
+		car["merge_start_y"] = entry_y
+		car["speed"] = move_toward(float(car.get("speed", player_speed)), player_speed, 80.0 * delta)
+		car["speed_command"] = player_speed
 		car["pressure"] = maxf(float(car.get("pressure", 0.0)), 1.0)
 		car["wait_timer"] = float(car.get("wait_timer", 0.0)) + delta
 
@@ -2132,8 +2296,209 @@ func _merge_gate_y() -> float:
 	return clampf(preferred_y, lower_bound, upper_bound)
 
 
+## 返回左右支路第一次进入主路时对应的最近外侧车道。
+func _merge_entry_lane(side: int) -> int:
+	return 0 if side < 0 else LANE_COUNT - 1
+
+
+## 返回支路车辆等待和开始加速并线时的屏幕纵坐标。
+func _merge_entry_y() -> float:
+	return _merge_gate_y() + MERGE_ENTRY_Y_OFFSET
+
+
 func _merge_entry_x(side: int) -> float:
 	return road_left - MERGE_ENTRY_OFFSET if side < 0 else road_left + road_width + MERGE_ENTRY_OFFSET
+
+
+## 按车辆记录的 ID 找到其绑定的动态合流道路段；找不到时返回空字典兼容旧测试夹具。
+func _merge_junction_for_car(car: Dictionary) -> Dictionary:
+	var junction_id: int = int(car.get("merge_junction_id", -1))
+	if junction_id < 0:
+		return {}
+	for junction in merge_junctions:
+		if int(junction.get("id", -1)) == junction_id:
+			return junction
+	return {}
+
+
+## 按道路段 ID 找到仍在场的合流车辆；车辆撞毁或已回收时不再绘制支路。
+func _merge_car_for_junction(junction: Dictionary) -> Dictionary:
+	var junction_id: int = int(junction.get("id", -1))
+	if junction_id < 0:
+		return {}
+	for car in traffic:
+		if int(car.get("id", -1)) != junction_id:
+			continue
+		if bool(car.get("crashed", false)):
+			return {}
+		return car
+	return {}
+
+
+## 按道路段 ID 返回数组下标，便于在状态切换时同步写回道路段。
+func _merge_junction_index(junction_id: int) -> int:
+	for index in range(merge_junctions.size()):
+		if int(merge_junctions[index].get("id", -1)) == junction_id:
+			return index
+	return -1
+
+
+## 判断同侧是否已有正在移动或等待的道路段，避免两段支路重叠成一根固定管道。
+func _merge_side_has_active_junction(side: int) -> bool:
+	for junction in merge_junctions:
+		if int(junction.get("side", 0)) == side and str(junction.get("phase", "")) != "EXIT":
+			return true
+	return false
+
+
+## 同步修改车辆与动态道路段的阶段和是否继续随镜头移动的标记。
+func _set_merge_junction_phase(car: Dictionary, phase: String, moving: bool) -> void:
+	car["merge_phase"] = phase
+	var junction_id: int = int(car.get("merge_junction_id", -1))
+	var junction_index: int = _merge_junction_index(junction_id)
+	if junction_index < 0:
+		return
+	merge_junctions[junction_index]["phase"] = phase
+	merge_junctions[junction_index]["moving"] = moving
+
+
+## 推进动态合流道路段；道路段无绑定车辆时只等待自身离开后回收，避免出现常驻支路。
+func _update_merge_junctions(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	var camera_motion: float = player_speed * PLAYER_SPEED_SCALE * delta
+	for index in range(merge_junctions.size() - 1, -1, -1):
+		var junction: Dictionary = merge_junctions[index]
+		if bool(junction.get("moving", true)):
+			junction["y"] = float(junction.get("y", MERGE_JUNCTION_START_Y)) + camera_motion
+		var car: Dictionary = _merge_car_for_junction(junction)
+		if car.is_empty():
+			junction["phase"] = "EXIT"
+			junction["moving"] = true
+			if float(junction.get("y", 0.0)) > screen_size.y + MERGE_JUNCTION_CULL_MARGIN:
+				merge_junctions.remove_at(index)
+				continue
+		else:
+			var junction_y: float = float(junction.get("y", _merge_gate_y()))
+			car["merge_gate_y"] = junction_y
+			car["merge_start_y"] = junction_y + MERGE_ENTRY_Y_OFFSET
+			var phase: String = str(junction.get("phase", car.get("merge_phase", "APPROACH")))
+			if bool(car.get("crashed", false)):
+				phase = "EXIT"
+				junction["phase"] = phase
+				junction["moving"] = true
+				car["merge_phase"] = phase
+			if phase == "APPROACH":
+				car["x"] = float(car.get("merge_entry_x", _merge_entry_x(int(junction.get("side", -1)))))
+				car["previous_x"] = car["x"]
+				car["lateral_target_x"] = car["x"]
+				car["y"] = float(junction.get("y", MERGE_JUNCTION_START_Y)) + MERGE_ENTRY_Y_OFFSET
+				car["previous_y"] = car["y"]
+				car["merge_progress"] = 0.0
+				car["merge_elapsed"] = 0.0
+				car["merge_flow_offset"] = 0.0
+				car["state"] = "MERGE APPROACH"
+			elif phase == "EXIT" and bool(car.get("merge_exit_attached", false)) and not bool(car.get("crashed", false)):
+				# 完成并线后的短暂退出段仍与道路段同向下移，保证支路和车辆不会在屏幕边缘脱节。
+				car["x"] = _lane_x(clampi(int(junction.get("target_lane", car.get("lane", 0))), 0, LANE_COUNT - 1))
+				car["y"] = junction_y + float(car.get("merge_flow_offset", 0.0))
+			elif phase == "EXIT" and str(car.get("state", "")) == "MERGE APPROACH":
+				# 车辆异常离场时不把道路段重新切回等待态。
+				car["merge_phase"] = phase
+			if phase == "EXIT" and junction_y > screen_size.y + MERGE_JUNCTION_CULL_MARGIN:
+				# 道路段和绑定车辆都已经离开可视区；车辆解除绑定后交回普通回收流程。
+				car["merge_junction_id"] = -1
+				car["merge_phase"] = "CRUISE"
+				car["merge_exit_attached"] = false
+				merge_junctions.remove_at(index)
+				continue
+		merge_junctions[index] = junction
+
+## 把合流进度转换为平滑的曲线进度，避免车辆在路径起点和终点突然变向。
+func _merge_path_ease(progress: float) -> float:
+	var t: float = clampf(progress, 0.0, 1.0)
+	return t * t * (3.0 - 2.0 * t)
+
+
+## 返回一段带控制点的贝塞尔曲线上的位置，用于视觉和车辆移动共用同一条路线。
+func _cubic_merge_path_point(start: Vector2, control_a: Vector2, control_b: Vector2, end: Vector2, progress: float) -> Vector2:
+	var t: float = _merge_path_ease(progress)
+	var inverse_t: float = 1.0 - t
+	var inverse_t_squared: float = inverse_t * inverse_t
+	var t_squared: float = t * t
+	return start * inverse_t_squared * inverse_t + control_a * 3.0 * inverse_t_squared * t + control_b * 3.0 * inverse_t * t_squared + end * t_squared * t
+
+
+## 根据汇入侧、目标车道、起点和动态合流点返回真实的支路曲线路径点。
+func _merge_path_point_between(side: int, target_lane: int, start_x: float, start_y: float, progress: float, gate_y_override: float = INF) -> Vector2:
+	var start: Vector2 = Vector2(start_x, start_y)
+	var gate_y: float = _merge_gate_y() if is_inf(gate_y_override) else gate_y_override
+	var end: Vector2 = Vector2(_lane_x(target_lane), gate_y)
+	var direction: float = 1.0 if side < 0 else -1.0
+	var vertical_span: float = maxf(absf(start_y - end.y), 40.0)
+	var control_a: Vector2 = start + Vector2(direction * 24.0, -vertical_span * 0.22)
+	var control_b: Vector2 = end - Vector2(direction * 34.0, -vertical_span * 0.62)
+	return _cubic_merge_path_point(start, control_a, control_b, end, progress)
+
+
+## 返回标准左右支路的曲线路径点，供道路标线和提示箭头使用。
+func _merge_path_point(side: int, progress: float) -> Vector2:
+	return _merge_path_point_between(side, _merge_entry_lane(side), _merge_entry_x(side), _merge_entry_y(), progress)
+
+
+## 返回指定合流车辆当前进度对应的曲线路径点。
+func _merge_path_point_for_car(car: Dictionary, progress: float) -> Vector2:
+	var side: int = int(car.get("merge_side", 0))
+	var target_lane: int = clampi(int(car.get("merge_target_lane", _merge_entry_lane(side))), 0, LANE_COUNT - 1)
+	var start_x: float = float(car.get("merge_entry_x", _merge_entry_x(side)))
+	var gate_y: float = float(car.get("merge_gate_y", _merge_gate_y()))
+	var junction: Dictionary = _merge_junction_for_car(car)
+	if not junction.is_empty():
+		gate_y = float(junction.get("y", gate_y))
+		car["merge_gate_y"] = gate_y
+		car["merge_start_y"] = gate_y + MERGE_ENTRY_Y_OFFSET
+	var start_y: float = float(car.get("merge_start_y", gate_y + MERGE_ENTRY_Y_OFFSET))
+	return _merge_path_point_between(side, target_lane, start_x, start_y, progress, gate_y)
+
+
+## 返回动态合流道路段在指定进度上的中心点，视觉道路和车辆共享这一条路径。
+func _merge_path_point_for_junction(junction: Dictionary, progress: float) -> Vector2:
+	var side: int = int(junction.get("side", -1))
+	var target_lane: int = clampi(int(junction.get("target_lane", _merge_entry_lane(side))), 0, LANE_COUNT - 1)
+	var gate_y: float = float(junction.get("y", _merge_gate_y()))
+	return _merge_path_point_between(side, target_lane, _merge_entry_x(side), gate_y + MERGE_ENTRY_Y_OFFSET, progress, gate_y)
+
+
+## 根据动态合流道路段生成路面带状多边形，随道路段而不是固定屏幕装饰移动。
+func _merge_path_strip_for_junction(junction: Dictionary, width: float) -> PackedVector2Array:
+	var left_points: PackedVector2Array = PackedVector2Array()
+	var right_points: PackedVector2Array = PackedVector2Array()
+	var half_width: float = width * 0.5
+	for sample_index in range(MERGE_PATH_SAMPLE_COUNT + 1):
+		var progress: float = float(sample_index) / float(MERGE_PATH_SAMPLE_COUNT)
+		var center: Vector2 = _merge_path_point_for_junction(junction, progress)
+		var before: Vector2 = _merge_path_point_for_junction(junction, maxf(progress - 0.02, 0.0))
+		var after: Vector2 = _merge_path_point_for_junction(junction, minf(progress + 0.02, 1.0))
+		var tangent: Vector2 = (after - before).normalized()
+		var normal: Vector2 = Vector2(-tangent.y, tangent.x)
+		left_points.append(center + normal * half_width)
+		right_points.append(center - normal * half_width)
+	var strip: PackedVector2Array = PackedVector2Array()
+	for point in left_points:
+		strip.append(point)
+	for index in range(right_points.size() - 1, -1, -1):
+		strip.append(right_points[index])
+	return strip
+
+
+## 生成支路路面带状多边形，让运行时道路材质和车辆路径保持一致。
+func _merge_path_strip(side: int, width: float) -> PackedVector2Array:
+	var standard_junction: Dictionary = {
+		"side": side,
+		"target_lane": _merge_entry_lane(side),
+		"y": _merge_gate_y(),
+	}
+	return _merge_path_strip_for_junction(standard_junction, width)
 
 
 ## 判断支路车辆沿实际横向路径移动时，指定时刻的车身中心位置。
@@ -2145,7 +2510,10 @@ func _merge_path_x_at_time(start_x: float, target_x: float, lateral_speed: float
 func _merge_path_conflicts_with_vehicle(candidate_start_x: float, candidate_x: float, center_y: float, candidate_speed: float, candidate_driver_type: String, candidate_size: Vector2, other: Dictionary, other_size: Vector2) -> bool:
 	var candidate_profile: Dictionary = _driver_profile(candidate_driver_type)
 	var candidate_lateral_speed: float = MERGE_LATERAL_SPEED
-	var candidate_travel_time: float = absf(candidate_x - candidate_start_x) / candidate_lateral_speed
+	var candidate_merge_side: int = -1 if candidate_start_x < road_left else (1 if candidate_start_x > road_left + road_width else 0)
+	var candidate_start_y: float = center_y + MERGE_ENTRY_Y_OFFSET if candidate_merge_side != 0 else center_y
+	var candidate_target_lane: int = _nearest_lane(candidate_x)
+	var candidate_travel_time: float = absf(candidate_x - candidate_start_x) / candidate_lateral_speed + MERGE_PATH_TIME_PADDING
 	var other_start_x: float = float(other.get("x", 0.0))
 	var other_target_x: float = float(other.get("lateral_target_x", other_start_x))
 	var other_profile: Dictionary = _driver_profile(str(other.get("driver_type", "NORMAL")))
@@ -2165,11 +2533,18 @@ func _merge_path_conflicts_with_vehicle(candidate_start_x: float, candidate_x: f
 	var body_limit: float = (candidate_size.y + other_size.y) * 0.5 + MERGE_GAP_PADDING
 	for sample_index in range(sample_count + 1):
 		var elapsed: float = horizon * float(sample_index) / float(sample_count)
-		var candidate_at_time: float = _merge_path_x_at_time(candidate_start_x, candidate_x, candidate_lateral_speed, elapsed)
+		var candidate_progress: float = clampf(elapsed / maxf(candidate_travel_time, 0.001), 0.0, 1.0)
+		var candidate_point: Vector2 = Vector2(
+			lerpf(candidate_start_x, candidate_x, _merge_path_ease(candidate_progress)),
+			lerpf(candidate_start_y, center_y, _merge_path_ease(candidate_progress))
+		)
+		if candidate_merge_side != 0:
+			candidate_point = _merge_path_point_between(candidate_merge_side, candidate_target_lane, candidate_start_x, candidate_start_y, candidate_progress, center_y)
+		var candidate_at_time: float = candidate_point.x
 		var other_at_time: float = _merge_path_x_at_time(other_start_x, other_target_x, other_lateral_speed, elapsed)
 		if not _horizontal_overlap(candidate_at_time, candidate_size.x, other_at_time, other_size.x):
 			continue
-		var candidate_y_at_time: float = center_y + (player_speed - candidate_speed) * PLAYER_SPEED_SCALE * elapsed
+		var candidate_y_at_time: float = candidate_point.y + (player_speed - candidate_speed) * PLAYER_SPEED_SCALE * elapsed
 		var other_y_at_time: float = float(other.get("y", center_y)) + (player_speed - other_speed) * PLAYER_SPEED_SCALE * elapsed
 		var other_is_ahead: bool = other_y_at_time < candidate_y_at_time
 		var dynamic_limit: float = body_limit
@@ -2216,6 +2591,8 @@ func _merge_lane_gap_clear(lane: int, center_y: float, car_kind: String, ignored
 		var other_size: Vector2 = _car_dimensions(str(other.get("kind", "SEDAN")))
 		var other_speed: float = float(other.get("speed", candidate_speed))
 		var other_is_ahead: bool = other_y < center_y
+		if candidate_merge_side != 0 and _merge_path_conflicts_with_vehicle(candidate_start_x, candidate_x, center_y, candidate_speed, candidate_driver_type, candidate_size, other, other_size):
+			return false
 		# 只计算真正会缩短这一侧间距的相对速度；例如后车比合流车慢时，不应凭空增加后方安全距离。
 		var closing_speed: float = maxf(candidate_speed - other_speed, 0.0) if other_is_ahead else maxf(other_speed - candidate_speed, 0.0)
 		var profile: Dictionary = _driver_profile(candidate_driver_type)
@@ -2240,7 +2617,13 @@ func _merge_lane_gap_clear(lane: int, center_y: float, car_kind: String, ignored
 func _choose_merge_target_lane(center_y: float, car_kind: String, candidate_speed: float = 40.0, ignored_id: int = -1, merge_side: int = 0, candidate_start_x: float = -1.0, candidate_driver_type: String = "NORMAL") -> int:
 	var best_lane: int = -1
 	var best_score: float = INF
-	for lane in range(LANE_COUNT):
+	var candidate_lanes: Array[int] = []
+	if merge_side != 0:
+		candidate_lanes.append(_merge_entry_lane(merge_side))
+	else:
+		for lane_index in range(LANE_COUNT):
+			candidate_lanes.append(lane_index)
+	for lane in candidate_lanes:
 		var candidate_x: float = _lane_x(lane)
 		if _lane_blocked_by_player(lane, center_y, car_kind, candidate_x) or _lane_has_route_blocker(lane, center_y + 2.0, 220.0):
 			continue
@@ -2284,7 +2667,11 @@ func _try_spawn_merge_car(max_cars: int, difficulty: float) -> bool:
 		return false
 	var merge_y: float = _merge_gate_y()
 	var side: int = merge_side_toggle
+	if _merge_side_has_active_junction(side):
+		return false
 	var entry_x: float = _merge_entry_x(side)
+	var junction_start_y: float = MERGE_JUNCTION_START_Y
+	var entry_y: float = junction_start_y + MERGE_ENTRY_Y_OFFSET
 	var profile: Dictionary = {}
 	var merge_speed: float = 0.0
 	var target_lane: int = -1
@@ -2293,7 +2680,7 @@ func _try_spawn_merge_car(max_cars: int, difficulty: float) -> bool:
 		var candidate_profile: Dictionary = _random_traffic_profile(difficulty)
 		# 支路先用接近主路的速度找空隙，完成并线后再恢复该司机自己的巡航速度。
 		var candidate_merge_speed: float = minf(float(candidate_profile["base_speed"]), player_speed + 4.0)
-		# 选择时就带上从支路入口到目标车道的实际扫掠路径，避免先生成在“看似可用”、实际无法穿过的车道。
+		# 选择时就带上从支路入口到外侧目标车道的实际扫掠路径，避免先生成在“看似可用”、实际无法穿过的车道。
 		var candidate_lane: int = _choose_merge_target_lane(merge_y, str(candidate_profile["kind"]), candidate_merge_speed, -1, side, entry_x, str(candidate_profile["driver_type"]))
 		if candidate_lane < 0:
 			continue
@@ -2303,29 +2690,44 @@ func _try_spawn_merge_car(max_cars: int, difficulty: float) -> bool:
 		break
 	if target_lane < 0:
 		return false
-	_spawn_traffic(str(profile["kind"]), target_lane, merge_y, merge_speed, bool(profile["aggressive"]), str(profile["driver_type"]), "MERGE")
+	_spawn_traffic(str(profile["kind"]), target_lane, entry_y, merge_speed, bool(profile["aggressive"]), str(profile["driver_type"]), "MERGE")
 	var car: Dictionary = traffic[traffic.size() - 1]
 	car["x"] = _merge_entry_x(side)
 	car["previous_x"] = car["x"]
 	car["lateral_target_x"] = car["x"]
-	car["y"] = merge_y
+	car["y"] = entry_y
 	car["lane"] = target_lane
 	car["target_lane"] = target_lane
 	car["merge_side"] = side
 	car["merge_target_lane"] = target_lane
 	car["merge_entry_x"] = entry_x
-	car["merge_gate_y"] = merge_y
+	car["merge_junction_id"] = int(car.get("id", -1))
+	car["merge_phase"] = "APPROACH"
+	car["merge_gate_y"] = junction_start_y
+	car["merge_start_y"] = entry_y
+	car["merge_progress"] = 0.0
+	car["merge_elapsed"] = 0.0
+	car["merge_duration"] = 0.0
+	car["merge_flow_offset"] = 0.0
 	# 并线阶段先对准车道中心，避免人格巡航偏移把刚确认的空隙又扩大成一次新的拒绝。
 	car["merge_cruise_offset"] = float(car.get("cruise_offset", 0.0))
 	car["cruise_offset"] = 0.0
 	car["merge_completed"] = false
 	car["initial_behind"] = false
 	car["attempted_pass"] = false
-	car["state"] = "MERGING"
+	car["state"] = "MERGE APPROACH"
 	car["indicator"] = -side
 	car["speed"] = merge_speed
 	car["speed_command"] = merge_speed
 	car["base_speed"] = float(profile["base_speed"])
+	merge_junctions.append({
+		"id": int(car.get("id", -1)),
+		"side": side,
+		"target_lane": target_lane,
+		"y": junction_start_y,
+		"phase": "APPROACH",
+		"moving": true,
+	})
 	merge_queue_count -= 1
 	merge_spawned_count += 1
 	merge_display_lane = target_lane
@@ -3622,45 +4024,110 @@ func _draw_background() -> void:
 					draw_rect(Rect2(wx, y + 16.0, 9.0, 12.0), Color(0.95, 0.75, 0.32, 0.14))
 
 
+## 返回采用统一道路位移规则的平铺起点；道路前进时所有标记的屏幕纵坐标都增大。
+func _scroll_pattern_origin(base_y: float, scroll: float, spacing: float) -> float:
+	if spacing <= 0.0:
+		return base_y
+	return base_y + fposmod(scroll, spacing)
+
+
 func _draw_road(shift: Vector2) -> void:
+	var shoulder_rect := Rect2(Vector2(road_left - 42.0, 0.0) + shift, Vector2(road_width + 84.0, screen_size.y))
+	if sidewalk_surface_texture != null:
+		draw_texture_rect(sidewalk_surface_texture, shoulder_rect, true, Color.WHITE)
+	else:
+		draw_rect(shoulder_rect, COLOR_SIDEWALK)
+	draw_rect(Rect2(Vector2(road_left - 12.0, 0.0) + shift, Vector2(12.0, screen_size.y)), COLOR_CURB)
+	draw_rect(Rect2(Vector2(road_left + road_width, 0.0) + shift, Vector2(12.0, screen_size.y)), COLOR_CURB)
 	var road_rect := Rect2(Vector2(road_left, 0.0) + shift, Vector2(road_width, screen_size.y))
-	draw_rect(Rect2(Vector2(road_left - 18.0, 0.0) + shift, Vector2(road_width + 36.0, screen_size.y)), COLOR_SIDEWALK)
-	draw_rect(road_rect, COLOR_ROAD)
+	if road_surface_texture != null:
+		draw_texture_rect(road_surface_texture, road_rect, true, Color.WHITE)
+	else:
+		draw_rect(road_rect, COLOR_ROAD)
+	_draw_road_surface_accents(shift)
 	draw_line(Vector2(road_left, 0.0) + shift, Vector2(road_left, screen_size.y) + shift, COLOR_ROAD_EDGE, 4.0)
 	draw_line(Vector2(road_left + road_width, 0.0) + shift, Vector2(road_left + road_width, screen_size.y) + shift, COLOR_ROAD_EDGE, 4.0)
+	draw_line(Vector2(road_left + 8.0, 0.0) + shift, Vector2(road_left + 8.0, screen_size.y) + shift, Color(0.12, 0.18, 0.20, 0.78), 2.0)
+	draw_line(Vector2(road_left + road_width - 8.0, 0.0) + shift, Vector2(road_left + road_width - 8.0, screen_size.y) + shift, Color(0.12, 0.18, 0.20, 0.78), 2.0)
 	for lane in range(1, LANE_COUNT):
 		var x: float = road_left + lane_width * float(lane)
-		var y: float = -96.0 - road_scroll
+		var y: float = _scroll_pattern_origin(-96.0, road_scroll, 96.0)
 		while y < screen_size.y + 96.0:
-			draw_rect(Rect2(Vector2(x - 2.0, y) + shift, Vector2(4.0, 58.0)), Color(0.78, 0.84, 0.86, 0.58))
+			draw_rect(Rect2(Vector2(x - 2.0, y) + shift, Vector2(4.0, 58.0)), Color(0.84, 0.85, 0.76, 0.74))
+			draw_rect(Rect2(Vector2(x - 1.0, y + 5.0) + shift, Vector2(2.0, 48.0)), Color(0.97, 0.93, 0.78, 0.28))
 			y += 96.0
 
-	for lane in range(LANE_COUNT):
-		var x: float = _lane_x(lane)
-		draw_circle(Vector2(x, 34.0) + shift, 3.0, Color(0.40, 0.88, 0.76, 0.30))
+	var reflector_y: float = _scroll_pattern_origin(-48.0, road_scroll * 0.72, 64.0)
+	while reflector_y < screen_size.y + 64.0:
+		draw_rect(Rect2(Vector2(road_left + 12.0, reflector_y) + shift, Vector2(4.0, 9.0)), Color(0.40, 0.88, 0.76, 0.54))
+		draw_rect(Rect2(Vector2(road_left + road_width - 16.0, reflector_y) + shift, Vector2(4.0, 9.0)), Color(0.40, 0.88, 0.76, 0.54))
+		reflector_y += 64.0
+
+
+## 绘制低对比、随道路滚动的磨损标记，避免平铺材质显得完全静止。
+func _draw_road_surface_accents(shift: Vector2) -> void:
+	for accent_index in range(10):
+		var lane: int = posmod(accent_index * 3 + 1, LANE_COUNT)
+		var y: float = fmod(float(accent_index) * 137.0 + road_scroll * 0.38, screen_size.y + 180.0) - 90.0
+		var x: float = road_left + lane_width * (float(lane) + 0.18) + float((accent_index * 19) % 28)
+		var width: float = 9.0 + float((accent_index * 7) % 18)
+		draw_rect(Rect2(Vector2(x, y) + shift, Vector2(width, 3.0)), Color(0.08, 0.12, 0.14, 0.24))
 
 
 func _draw_merge_source(shift: Vector2) -> void:
-	var gate_y: float = _merge_gate_y()
-	var target_x: float = _lane_x(merge_display_lane)
 	var pulse: float = 0.32 + 0.16 * (0.5 + 0.5 * sin(run_time * 4.0))
-	for side in [-1, 1]:
-		var start := Vector2(_merge_entry_x(side), gate_y + 34.0)
-		var end := Vector2(target_x, gate_y)
-		var source_color: Color = COLOR_INFO
-		source_color.a = pulse
-		draw_line(start + shift, end + shift, source_color, 3.0)
-		var direction: Vector2 = (end - start).normalized()
+	for junction in merge_junctions:
+		if _merge_car_for_junction(junction).is_empty():
+			continue
+		var path_visible: bool = false
+		for sample_index in range(MERGE_PATH_SAMPLE_COUNT + 1):
+			var sample_point: Vector2 = _merge_path_point_for_junction(junction, float(sample_index) / float(MERGE_PATH_SAMPLE_COUNT))
+			if sample_point.y > -120.0 and sample_point.y < screen_size.y + 140.0:
+				path_visible = true
+				break
+		if not path_visible:
+			continue
+		var shoulder_points: PackedVector2Array = _offset_points(_merge_path_strip_for_junction(junction, MERGE_RAMP_SHOULDER_WIDTH), shift)
+		var ramp_points: PackedVector2Array = _offset_points(_merge_path_strip_for_junction(junction, MERGE_RAMP_WIDTH), shift)
+		draw_colored_polygon(shoulder_points, Color("#101a20"))
+		draw_colored_polygon(ramp_points, Color("#29383e"))
+		var centerline: PackedVector2Array = PackedVector2Array()
+		for sample_index in range(MERGE_PATH_SAMPLE_COUNT + 1):
+			var progress: float = float(sample_index) / float(MERGE_PATH_SAMPLE_COUNT)
+			centerline.append(_merge_path_point_for_junction(junction, progress) + shift)
+		draw_polyline(centerline, Color(0.46, 0.61, 0.63, 0.72), 2.0, true)
+		var interior_line_color: Color = COLOR_MERGE
+		interior_line_color.a = pulse
+		for dash_index in range(0, MERGE_PATH_SAMPLE_COUNT, 2):
+			var dash_start: Vector2 = _merge_path_point_for_junction(junction, float(dash_index) / float(MERGE_PATH_SAMPLE_COUNT)) + shift
+			var dash_end: Vector2 = _merge_path_point_for_junction(junction, float(dash_index + 1) / float(MERGE_PATH_SAMPLE_COUNT)) + shift
+			draw_line(dash_start, dash_end, interior_line_color, 3.0)
+		var arrow_progress: float = 0.58
+		var arrow_center: Vector2 = _merge_path_point_for_junction(junction, arrow_progress) + shift
+		var before: Vector2 = _merge_path_point_for_junction(junction, arrow_progress - 0.03)
+		var after: Vector2 = _merge_path_point_for_junction(junction, arrow_progress + 0.03)
+		var direction: Vector2 = (after - before).normalized()
 		var perpendicular: Vector2 = Vector2(-direction.y, direction.x)
-		var arrow_center: Vector2 = start.lerp(end, 0.62)
-		draw_line(arrow_center - direction * 10.0 - perpendicular * 7.0 + shift, arrow_center + shift, source_color, 3.0)
-		draw_line(arrow_center - direction * 10.0 + perpendicular * 7.0 + shift, arrow_center + shift, source_color, 3.0)
-		draw_circle(start + shift, 5.0, source_color)
-	var label_color: Color = COLOR_INFO
-	label_color.a = 0.88
-	_draw_text(Vector2(target_x - 38.0, gate_y - 28.0) + shift, "支路入口", 11, label_color)
-	if merge_queue_count > 0:
-		_draw_text(Vector2(target_x - 52.0, gate_y + 58.0) + shift, "等待汇入 %d" % merge_queue_count, 11, COLOR_WARNING)
+		draw_line(arrow_center - direction * 15.0 - perpendicular * 8.0, arrow_center, interior_line_color, 3.0)
+		draw_line(arrow_center - direction * 15.0 + perpendicular * 8.0, arrow_center, interior_line_color, 3.0)
+		for hatch_index in range(4):
+			var hatch_progress: float = 0.70 + float(hatch_index) * 0.06
+			var hatch_center: Vector2 = _merge_path_point_for_junction(junction, hatch_progress) + shift
+			var hatch_before: Vector2 = _merge_path_point_for_junction(junction, hatch_progress - 0.015)
+			var hatch_after: Vector2 = _merge_path_point_for_junction(junction, hatch_progress + 0.015)
+			var hatch_direction: Vector2 = (hatch_after - hatch_before).normalized()
+			var hatch_normal: Vector2 = Vector2(-hatch_direction.y, hatch_direction.x)
+			draw_line(hatch_center - hatch_normal * 18.0 - hatch_direction * 8.0, hatch_center + hatch_normal * 18.0 + hatch_direction * 8.0, Color(0.85, 0.78, 0.57, 0.46), 2.0)
+		var entry_point: Vector2 = _merge_path_point_for_junction(junction, 0.0) + shift
+		draw_circle(entry_point, 6.0, Color(0.25, 0.82, 0.85, 0.72))
+		var label_color: Color = COLOR_INFO
+		label_color.a = 0.92
+		if entry_point.y > -30.0 and entry_point.y < screen_size.y + 40.0:
+			_draw_text(entry_point + Vector2(-30.0, 30.0), "动态入口", 11, label_color)
+		var target_lane: int = clampi(int(junction.get("target_lane", _merge_entry_lane(int(junction.get("side", -1))))), 0, LANE_COUNT - 1)
+		var phase: String = str(junction.get("phase", "APPROACH"))
+		var destination_color: Color = COLOR_WARNING if phase == "WAIT" else interior_line_color
+		_draw_text(_merge_path_point_for_junction(junction, 0.86) + Vector2(-25.0, -10.0) + shift, "等待" if phase == "WAIT" else "汇入 L%d" % (target_lane + 1), 10, destination_color)
 
 
 func _draw_road_events(shift: Vector2) -> void:
@@ -3689,9 +4156,9 @@ func _draw_road_events(shift: Vector2) -> void:
 		else:
 			var merge_x: float = _lane_x(int(road_event["lane"]))
 			var merge_center := Vector2(merge_x, center_y) + shift
-			draw_line(Vector2(road_left - 10.0, center_y + 34.0) + shift, merge_center + Vector2(-26.0, 0.0), COLOR_INFO, 4.0)
-			draw_line(Vector2(road_left + road_width + 10.0, center_y + 34.0) + shift, merge_center + Vector2(26.0, 0.0), COLOR_INFO, 4.0)
-			_draw_text(merge_center + Vector2(-31.0, -42.0), "支路合流", 12, COLOR_INFO)
+			draw_circle(merge_center, 26.0, Color(0.20, 0.52, 0.66, 0.22))
+			draw_arc(merge_center, 26.0, 0.0, TAU, 24, COLOR_INFO, 2.0)
+			_draw_text(merge_center + Vector2(-42.0, -42.0), "支路合流事件", 12, COLOR_INFO)
 			_draw_text(merge_center + Vector2(-9.0, 20.0), "↓", 24, COLOR_INFO)
 
 
@@ -3944,7 +4411,7 @@ func _draw_hud() -> void:
 	_draw_text(Vector2(screen_size.x - 264.0, 68.0), "速度  %02d km/h" % int(round(player_speed)), 17, _speed_color())
 	_draw_text(Vector2(screen_size.x - 264.0, 94.0), "意图  %s" % _intent_summary(), 12, COLOR_INFO)
 	_draw_text(Vector2(screen_size.x - 264.0, 119.0), "车流  %02d  /  困住  %02d" % [_active_traffic_count(), vehicles_trapped], 12, COLOR_WARNING)
-	_draw_text(Vector2(screen_size.x - 264.0, 143.0), "支路入口在线  /  等待汇入 %02d" % merge_queue_count, 11, COLOR_INFO)
+	_draw_text(Vector2(screen_size.x - 264.0, 143.0), "动态道路段 %02d  /  等待汇入 %02d" % [merge_junctions.size(), merge_queue_count], 11, COLOR_INFO)
 
 	var banner := Rect2(screen_size.x * 0.5 - 232.0, 16.0, 464.0, 34.0)
 	draw_rect(banner, Color(0.09, 0.18, 0.22, 0.92))
@@ -4053,6 +4520,14 @@ func _draw_center_overlay(title: String, subtitle: String) -> void:
 	var center := Vector2(screen_size.x * 0.5, screen_size.y * 0.5)
 	_draw_text(center + Vector2(-160.0, -18.0), title, 36, COLOR_ACCENT if title == "本局完成" else COLOR_DANGER)
 	_draw_text(center + Vector2(-160.0, 26.0), subtitle, 15, Color.WHITE)
+
+
+## 为一组多边形顶点统一添加屏幕震动偏移，保持道路层和提示层同步。
+func _offset_points(points: PackedVector2Array, offset: Vector2) -> PackedVector2Array:
+	var shifted_points: PackedVector2Array = PackedVector2Array()
+	for point in points:
+		shifted_points.append(point + offset)
+	return shifted_points
 
 
 func _draw_box(center: Vector2, size: Vector2, color: Color, angle: float = 0.0) -> void:

@@ -1,0 +1,30 @@
+{
+  "project": "Traffic Menace",
+  "visual_target": "modern_pixel_top_down_city_road",
+  "assets": [
+    {
+      "id": "road_surface",
+      "path": "assets/road/road_surface.svg",
+      "role": "tileable asphalt surface",
+      "size": "128x256",
+      "alpha": false,
+      "filter": "nearest_or_crisp",
+      "repeat": true,
+      "source": "in-house authored SVG",
+      "license": "project-owned",
+      "status": "approved for graybox"
+    },
+    {
+      "id": "sidewalk_surface",
+      "path": "assets/road/sidewalk_surface.svg",
+      "role": "tileable sidewalk and shoulder surface",
+      "size": "96x256",
+      "alpha": false,
+      "filter": "nearest_or_crisp",
+      "repeat": true,
+      "source": "in-house authored SVG",
+      "license": "project-owned",
+      "status": "approved for graybox"
+    }
+  ]
+}

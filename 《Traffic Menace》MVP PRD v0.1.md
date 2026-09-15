@@ -7,7 +7,7 @@
 **单局目标时长：** 8 分钟  
 **MVP 核心目标：** 验证“堵别人 + 搞笑道具 + 连锁交通灾难”是否具有持续重玩价值。
 
-> **版本说明（2026-09-12）：** 本文件是早期设计基线。当前可运行灰盒已经升级为 3 个永久混合道具槽、23 个开放道具、`?` 自动拾取、1/2/3 直接使用和常驻左右支路汇入；试玩操作与实现细节请以 [《Traffic Menace》产品需求文档 PRD v0.3](</Users/lvfushun/dev/Traffic Menace/《Traffic Menace》产品需求文档 PRD v0.3.md>) 及 [灰盒 README](</Users/lvfushun/dev/Traffic Menace/prototypes/traffic-menace-graybox/README.md>) 为准。
+> **版本说明（2026-09-12）：** 本文件是早期设计基线。当前可运行灰盒已经升级为 3 个永久混合道具槽、23 个开放道具、`?` 自动拾取、1/2/3 直接使用和动态左右支路汇入；试玩操作与实现细节请以 [《Traffic Menace》产品需求文档 PRD v0.3](</Users/lvfushun/dev/Traffic Menace/《Traffic Menace》产品需求文档 PRD v0.3.md>) 及 [灰盒 README](</Users/lvfushun/dev/Traffic Menace/prototypes/traffic-menace-graybox/README.md>) 为准。
 
 ---
 
@@ -564,7 +564,7 @@ MVP 只需要少量道路变化：
 
 ### Merge
 
-左右支路常驻产生车辆并横向进入主路；目标车道不可用时，车辆在入口等待，主干道出现空位后继续汇入。道路事件“支路合流”期间进一步缩短入口间隔。
+左右支路按需为队首车辆创建动态道路段；道路段与车辆从屏幕上方一起进入视野并随镜头向下移动，抵达判定线后通过加速支路进入主路。左支路先落到 L1，右支路先落到 L5，车辆与道路段沿同一条连续曲线路径完成带车身宽度的并线检查。目标外侧车道不可用时，车辆和道路段一起等待，主干道出现真实前后空位后继续汇入；完成第一落点后再由普通 AI 逐道向内侧移动。道路事件“支路合流”期间进一步缩短入口间隔，但不生成固定的两侧支路装饰。
 
 ### Lane Closure
 

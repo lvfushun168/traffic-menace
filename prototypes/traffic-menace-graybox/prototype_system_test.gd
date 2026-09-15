@@ -35,7 +35,7 @@ func _init() -> void:
 	var crashed_seen: bool = false
 	var merge_car_seen: bool = false
 	var merge_after_crash_seen: bool = false
-	for _frame in range(2400):
+	for _frame in range(3600):
 		scene.call("_physics_process", 1.0 / 60.0)
 		if bool(scene.get("item_replacement_active")):
 			Input.action_press("choose_1")

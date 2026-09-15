@@ -4,6 +4,20 @@ const FRAME_DELTA: float = 1.0 / 60.0
 const MERGE_INTERVAL: float = 1.8
 
 
+## 清理测试场景中的动态合流道路段，避免上一个场景状态影响下一段断言。
+func _clear_merge_junctions(scene: Node) -> void:
+	var junctions: Array = scene.get("merge_junctions")
+	junctions.clear()
+	scene.set("merge_junctions", junctions)
+
+
+## 按真实运行顺序推进动态道路段和交通，供等待与释放断言共用。
+func _step_merge_world(scene: Node, frame_count: int) -> void:
+	for _frame in range(frame_count):
+		scene.call("_update_merge_junctions", FRAME_DELTA)
+		scene.call("_update_traffic", FRAME_DELTA)
+
+
 func _init() -> void:
 	var scene: Node = preload("res://main.tscn").instantiate()
 	root.add_child(scene)
@@ -11,11 +25,11 @@ func _init() -> void:
 	await process_frame
 	scene.call("reset_run")
 
-	# 关掉普通生成与其他道路事件，只观察常驻支路入口。
+	# 关掉普通生成与其他道路事件，只观察动态合流道路段。
 	var cleared_traffic: Array = scene.get("traffic")
 	cleared_traffic.clear()
 	scene.set("traffic", cleared_traffic)
-	scene.set("hazards", [])
+	_clear_merge_junctions(scene)
 	scene.set("spawn_clock", -100.0)
 	scene.set("road_event_clock", -100.0)
 	scene.set("pickup_clock", -100.0)
@@ -39,18 +53,76 @@ func _init() -> void:
 		elif int(car.get("merge_side", 0)) > 0:
 			right_entry_seen = true
 
-	for _frame in range(120):
-		scene.call("_update_traffic", FRAME_DELTA)
+	_step_merge_world(scene, 900)
 	var joined_main_road: bool = false
 	for car in scene.get("traffic") as Array:
 		if str(car.get("spawn_origin", "")) == "MERGE" and bool(car.get("merge_completed", false)):
 			joined_main_road = true
 			break
 
-	# 五条车道全部不可通行时，入口车辆应进入等待队列而不是消失。
+	# 道路段抵达判定线后遇到障碍，车辆和道路段必须一起暂停；清障后继续完成并线。
 	var waiting_traffic: Array = scene.get("traffic")
 	waiting_traffic.clear()
 	scene.set("traffic", waiting_traffic)
+	_clear_merge_junctions(scene)
+	scene.set("hazards", [])
+	scene.set("road_events", [])
+	scene.set("loose_props", [])
+	scene.set("merge_queue_count", 1)
+	scene.set("merge_spawned_count", 0)
+	scene.set("merge_source_clock", 0.0)
+	scene.set("merge_release_cooldown", 0.0)
+	scene.set("merge_side_toggle", -1)
+	scene.call("_update_merge_source", 0.0, 0.0, 30)
+	var waiting_spawned: bool = not (scene.get("traffic") as Array).is_empty() and not (scene.get("merge_junctions") as Array).is_empty()
+	var waiting_car: Dictionary = (scene.get("traffic") as Array)[0] if waiting_spawned else {}
+	var waiting_junction: Dictionary = (scene.get("merge_junctions") as Array)[0] if waiting_spawned else {}
+	var waiting_gate_y: float = float(scene.call("_merge_gate_y"))
+	var waiting_blockers: Array[Dictionary] = []
+	waiting_blockers.append({
+		"type": "SOFA",
+		"x": float(scene.call("_lane_x", 0)),
+		"y": waiting_gate_y,
+		"life": 10.0,
+		"active": true,
+		"blocks_route": true,
+		"collision": false,
+		"width": float(scene.get("lane_width")) * 0.9,
+		"height": 64.0,
+	})
+	scene.set("hazards", waiting_blockers)
+	var wait_reached: bool = false
+	var wait_sync_ok: bool = true
+	for _frame in range(900):
+		scene.call("_update_merge_junctions", FRAME_DELTA)
+		scene.call("_update_traffic", FRAME_DELTA)
+		if waiting_spawned:
+			var current_junctions: Array = scene.get("merge_junctions")
+			if current_junctions.is_empty():
+				break
+			waiting_junction = current_junctions[0]
+			var current_phase: String = str(waiting_car.get("merge_phase", ""))
+			if current_phase == "WAIT":
+				wait_reached = true
+				wait_sync_ok = absf(float(waiting_car.get("y", 0.0)) - float(waiting_junction.get("y", 0.0)) - 84.0) < 1.0 and not bool(waiting_junction.get("moving", true))
+				break
+	var cleared_wait_hazards: Array = scene.get("hazards")
+	cleared_wait_hazards.clear()
+	scene.set("hazards", cleared_wait_hazards)
+	var released_waiting: bool = false
+	for _frame in range(240):
+		scene.call("_update_merge_junctions", FRAME_DELTA)
+		scene.call("_update_traffic", FRAME_DELTA)
+		if waiting_spawned and bool(waiting_car.get("merge_completed", false)):
+			released_waiting = true
+			break
+	var dynamic_wait_ok: bool = waiting_spawned and wait_reached and wait_sync_ok and released_waiting
+
+	# 五条车道全部不可通行时，入口车辆应进入等待队列而不是消失。
+	waiting_traffic = scene.get("traffic")
+	waiting_traffic.clear()
+	scene.set("traffic", waiting_traffic)
+	_clear_merge_junctions(scene)
 	scene.set("merge_spawned_count", 0)
 	scene.set("merge_queue_count", 0)
 	scene.set("merge_source_clock", MERGE_INTERVAL)
@@ -85,6 +157,7 @@ func _init() -> void:
 	var high_speed_traffic: Array = scene.get("traffic")
 	high_speed_traffic.clear()
 	scene.set("traffic", high_speed_traffic)
+	_clear_merge_junctions(scene)
 	scene.call("_spawn_traffic", "SEDAN", 2, gate_y + 100.0, 90.0, false, "NORMAL")
 	var high_speed_rear_blocks_merge: bool = not bool(scene.call("_merge_lane_gap_clear", 2, gate_y, "SEDAN", -1, float(scene.call("_lane_x", 2)), [], 40.0))
 
@@ -178,10 +251,11 @@ func _init() -> void:
 	var released_traffic: Array = scene.get("traffic")
 	released_traffic.clear()
 	scene.set("traffic", released_traffic)
+	_clear_merge_junctions(scene)
 	scene.set("merge_source_clock", MERGE_INTERVAL)
 	scene.set("merge_release_cooldown", 0.0)
 	scene.call("_update_spawn_logic", 0.0)
 	var released_from_full_ok: bool = int(scene.get("merge_spawned_count")) == 1 and int(scene.get("merge_queue_count")) == 1
 
-	print("GRAYBOX_MERGE_TEST cars=%s left=%s right=%s joined=%s wait=%s release=%s fast_rear=%s full_queue=%s full_release=%s peak=%s" % [merge_cars, left_entry_seen, right_entry_seen, joined_main_road, queue_wait_ok, released_after_wait_ok, high_speed_rear_blocks_merge, full_queue_ok, released_from_full_ok, scene.get("merge_queue_peak")])
-	quit(0 if merge_cars > 0 and left_entry_seen and right_entry_seen and joined_main_road and queue_wait_ok and released_after_wait_ok and high_speed_rear_blocks_merge and full_queue_ok and released_from_full_ok else 1)
+	print("GRAYBOX_MERGE_TEST cars=%s left=%s right=%s joined=%s dynamic_wait=%s wait=%s release=%s fast_rear=%s full_queue=%s full_release=%s peak=%s" % [merge_cars, left_entry_seen, right_entry_seen, joined_main_road, dynamic_wait_ok, queue_wait_ok, released_after_wait_ok, high_speed_rear_blocks_merge, full_queue_ok, released_from_full_ok, scene.get("merge_queue_peak")])
+	quit(0 if merge_cars > 0 and left_entry_seen and right_entry_seen and joined_main_road and dynamic_wait_ok and queue_wait_ok and released_after_wait_ok and high_speed_rear_blocks_merge and full_queue_ok and released_from_full_ok else 1)
