@@ -1,49 +1,604 @@
 {
+  "schema_version": 2,
   "project": "Traffic Menace",
-  "visual_target": "modern_pixel_top_down_city_road",
+  "visual_target": "clumsy_arcade_cartoon_top_down_city_road",
+  "art_direction_brief": "../../../ART_DIRECTION.md",
+  "target_board": "assets/style_target/traffic_menace_style_target.png",
+  "status_flow": [
+    "planned",
+    "authored",
+    "normalized",
+    "in_engine_review",
+    "approved"
+  ],
   "pixel_art_baseline": {
     "logical_canvas": "640x360",
     "reference_display": "1280x720",
     "scale_policy": "integer_2x_when_possible",
     "filter": "nearest",
+    "mipmap": false,
     "runtime_rule": "no_antialiasing_or_subpixel_visual_motion",
-    "font_policy": "supported_chinese_pixel_font_required_for_production"
+    "font_policy": "licensed_chinese_pixel_font_rasterized_at_fixed_sizes",
+    "vehicle_anchor": "bottom-center",
+    "road_repeat": true
+  },
+  "palette": {
+    "ink_outline": "#091018",
+    "asphalt_deep": "#26323B",
+    "asphalt_light": "#35464C",
+    "shoulder_deep": "#17222D",
+    "warm_white": "#F2E7C9",
+    "merge_cyan": "#63C7D9",
+    "interactive_mint": "#58E1C1",
+    "warning_amber": "#FFCB5C",
+    "danger_coral": "#FF6B6B",
+    "reward_yellow": "#FFD75A",
+    "info_blue": "#9AC7FF",
+    "player_orange": "#F08A5D"
+  },
+  "family_defaults": {
+    "planned_source": {
+      "kind": "planned_manual_pixel",
+      "url_or_tool": "",
+      "creator": "",
+      "created_at": "2026-09-15",
+      "license": "project-owned",
+      "attribution": "",
+      "prompt_or_source_record": "",
+      "edit_history": "To be authored after target-board review."
+    },
+    "planned_verification": {
+      "native_scale_reviewed": false,
+      "in_engine_reviewed": false,
+      "technical_checks_passed": false,
+      "approved_by": ""
+    },
+    "vehicle_states": {
+      "cruise": 2,
+      "brake": 4,
+      "lane_change": 4,
+      "slip": 8,
+      "crash": 8,
+      "recover": 4,
+      "despawn": 4
+    },
+    "item_phases": {
+      "preview": 2,
+      "commit": 4,
+      "impact": 4,
+      "cleanup": 4
+    }
   },
   "assets": [
     {
+      "id": "style_target",
+      "category": "reference",
+      "role": "640x360 pixel gameplay target board",
+      "path": "assets/style_target/traffic_menace_style_target.png",
+      "status": "authored",
+      "priority": "P0",
+      "technical": {
+        "logical_dimensions": "640x360",
+        "alpha": false,
+        "frames": 1,
+        "anchor": "reference-board",
+        "filtering": "nearest",
+        "mipmap": false,
+        "repeat": false
+      },
+      "visual_locks": ["camera", "palette", "vehicle-silhouette", "hud-hierarchy", "accident-read"],
+      "source": {
+        "kind": "in_house_authored",
+        "url_or_tool": "manual pixel-grid SVG rasterized with macOS sips",
+        "creator": "OpenAI Codex",
+        "created_at": "2026-09-15",
+        "license": "project-owned",
+        "attribution": "",
+        "prompt_or_source_record": "assets/style_target/traffic_menace_style_target.svg",
+        "edit_history": "Integer-aligned hand-authored shapes; no image generation or external art."
+      },
+      "verification": {
+        "native_scale_reviewed": true,
+        "in_engine_reviewed": false,
+        "technical_checks_passed": true,
+        "approved_by": "",
+        "notes": "Requires gameplay-window review before approval."
+      }
+    },
+    {
+      "id": "style_target_2x_preview",
+      "category": "reference",
+      "role": "integer 2x review preview",
+      "path": "assets/style_target/traffic_menace_style_target_2x.png",
+      "status": "normalized",
+      "priority": "P0",
+      "technical": {
+        "logical_dimensions": "640x360",
+        "display_dimensions": "1280x720",
+        "alpha": false,
+        "frames": 1,
+        "anchor": "reference-board",
+        "filtering": "nearest",
+        "mipmap": false,
+        "repeat": false
+      },
+      "source": {
+        "kind": "derived_in_house",
+        "url_or_tool": "ffmpeg nearest-neighbor scale from style_target",
+        "creator": "OpenAI Codex",
+        "created_at": "2026-09-15",
+        "license": "project-owned",
+        "attribution": "",
+        "prompt_or_source_record": "style_target",
+        "edit_history": "Inspection-only 2x preview; not a runtime source."
+      },
+      "verification": {
+        "native_scale_reviewed": true,
+        "in_engine_reviewed": false,
+        "technical_checks_passed": true,
+        "approved_by": ""
+      }
+    },
+    {
       "id": "road_surface",
+      "category": "road",
+      "role": "graybox tileable asphalt SVG source",
       "path": "assets/road/road_surface.svg",
-      "role": "tileable asphalt surface",
-      "size": "128x256",
-      "alpha": false,
-      "filter": "nearest_or_crisp",
-      "repeat": true,
-      "source": "in-house authored SVG",
-      "license": "project-owned",
-      "status": "approved for graybox"
+      "status": "approved",
+      "approval_scope": "graybox_only",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "64x128", "source_dimensions": "128x256", "alpha": false, "frames": 1, "anchor": "tile", "filtering": "nearest_or_crisp", "mipmap": false, "repeat": true},
+      "source": {"kind": "in_house_authored", "url_or_tool": "existing SVG source", "creator": "project", "created_at": "2026-09-15", "license": "project-owned", "attribution": "", "prompt_or_source_record": "", "edit_history": "Existing graybox source; path retained."},
+      "verification": {"native_scale_reviewed": false, "in_engine_reviewed": true, "technical_checks_passed": true, "approved_by": "graybox baseline", "notes": "Not the formal pixel raster."}
+    },
+    {
+      "id": "road_surface_pixel",
+      "category": "road",
+      "role": "formal tileable asphalt raster",
+      "path": "assets/road/road_surface_pixel.png",
+      "status": "normalized",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "64x128", "display_dimensions": "128x256", "alpha": false, "frames": 1, "anchor": "tile", "filtering": "nearest", "mipmap": false, "repeat": true},
+      "visual_locks": ["road-color-role", "3x3-seamless", "no-baked-lane-lines"],
+      "source": {"kind": "derived_in_house", "url_or_tool": "nearest-neighbor rasterization from road_surface.svg", "creator": "OpenAI Codex", "created_at": "2026-09-15", "license": "project-owned", "attribution": "", "prompt_or_source_record": "road_surface", "edit_history": "Downsampled to formal logical raster."},
+      "verification": {"native_scale_reviewed": true, "in_engine_reviewed": false, "technical_checks_passed": true, "approved_by": "", "notes": "Pending 3x3 and gameplay-window review."}
     },
     {
       "id": "sidewalk_surface",
+      "category": "road",
+      "role": "graybox tileable sidewalk SVG source",
       "path": "assets/road/sidewalk_surface.svg",
-      "role": "tileable sidewalk and shoulder surface",
-      "size": "96x256",
-      "alpha": false,
-      "filter": "nearest_or_crisp",
-      "repeat": true,
-      "source": "in-house authored SVG",
-      "license": "project-owned",
-      "status": "approved for graybox"
+      "status": "approved",
+      "approval_scope": "graybox_only",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "48x128", "source_dimensions": "96x256", "alpha": false, "frames": 1, "anchor": "tile", "filtering": "nearest_or_crisp", "mipmap": false, "repeat": true},
+      "source": {"kind": "in_house_authored", "url_or_tool": "existing SVG source", "creator": "project", "created_at": "2026-09-15", "license": "project-owned", "attribution": "", "prompt_or_source_record": "", "edit_history": "Existing graybox source; path retained."},
+      "verification": {"native_scale_reviewed": false, "in_engine_reviewed": true, "technical_checks_passed": true, "approved_by": "graybox baseline", "notes": "Not the formal pixel raster."}
     },
     {
+      "id": "sidewalk_surface_pixel",
+      "category": "road",
+      "role": "formal tileable sidewalk and shoulder raster",
+      "path": "assets/road/sidewalk_surface_pixel.png",
+      "status": "normalized",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "48x128", "display_dimensions": "96x256", "alpha": false, "frames": 1, "anchor": "tile", "filtering": "nearest", "mipmap": false, "repeat": true},
+      "visual_locks": ["shoulder-color-role", "3x3-seamless", "low-contrast-boundary"],
+      "source": {"kind": "derived_in_house", "url_or_tool": "nearest-neighbor rasterization from sidewalk_surface.svg", "creator": "OpenAI Codex", "created_at": "2026-09-15", "license": "project-owned", "attribution": "", "prompt_or_source_record": "sidewalk_surface", "edit_history": "Downsampled to formal logical raster."},
+      "verification": {"native_scale_reviewed": true, "in_engine_reviewed": false, "technical_checks_passed": true, "approved_by": "", "notes": "Pending 3x3 and gameplay-window review."}
+    },
+    {
+      "id": "road_merge_markings",
+      "category": "road",
+      "role": "dynamic merge arrows and hatch decals",
+      "path": "assets/road/road_merge_markings_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "16x16 tiles", "alpha": true, "frames": 4, "anchor": "center", "filtering": "nearest", "mipmap": false, "repeat": false},
+      "visual_locks": ["merge-cyan", "warm-white", "stepped-diagonals"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "road_lane_closure_marker",
+      "category": "road",
+      "role": "lane closure warning decal",
+      "path": "assets/road/road_lane_closure_marker.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "80x30", "alpha": true, "frames": 2, "anchor": "center", "filtering": "nearest", "mipmap": false, "repeat": false},
+      "visual_locks": ["warning-amber", "danger-coral", "high-contrast-hatch"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "road_breakdown_marker",
+      "category": "road",
+      "role": "breakdown vehicle and hazard marker",
+      "path": "assets/road/road_breakdown_marker.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "40x56", "alpha": true, "frames": 2, "anchor": "bottom-center", "filtering": "nearest", "mipmap": false, "repeat": false},
+      "visual_locks": ["slate-body", "warning-amber", "dead-lights"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "road_merge_warning_marker",
+      "category": "road",
+      "role": "branch merge approach marker",
+      "path": "assets/road/road_merge_warning_marker.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "48x24", "alpha": true, "frames": 2, "anchor": "center", "filtering": "nearest", "mipmap": false, "repeat": false},
+      "visual_locks": ["merge-cyan", "info-blue", "visible-preview"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+
+    {
+      "id": "vehicle_player_menace",
+      "category": "vehicle",
+      "role": "player vehicle base and state overlays",
+      "runtime_key": "PLAYER",
+      "path": "assets/vehicles/vehicle_player_menace_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_canvas": "40x68", "logical_body": "34x59", "alpha": true, "anchor": "bottom-center", "filtering": "nearest", "mipmap": false, "state_frame_counts_ref": "vehicle_states"},
+      "visual_locks": ["player-orange", "navy-glass", "wide-body-variant"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "vehicle_npc_sedan",
+      "category": "vehicle",
+      "role": "sedan NPC vehicle family",
+      "runtime_key": "SEDAN",
+      "path": "assets/vehicles/vehicle_npc_sedan_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_canvas": "40x64", "logical_body": "32x56", "alpha": true, "anchor": "bottom-center", "filtering": "nearest", "mipmap": false, "state_frame_counts_ref": "vehicle_states"},
+      "visual_locks": ["low-sedan-silhouette", "blue-paint-variant"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "vehicle_npc_suv",
+      "category": "vehicle",
+      "role": "SUV NPC vehicle family",
+      "runtime_key": "SUV",
+      "path": "assets/vehicles/vehicle_npc_suv_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_canvas": "44x68", "logical_body": "35x59", "alpha": true, "anchor": "bottom-center", "filtering": "nearest", "mipmap": false, "state_frame_counts_ref": "vehicle_states"},
+      "visual_locks": ["chunky-suv-silhouette", "purple-paint-variant"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "vehicle_npc_van",
+      "category": "vehicle",
+      "role": "van NPC vehicle family",
+      "runtime_key": "VAN",
+      "path": "assets/vehicles/vehicle_npc_van_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_canvas": "48x76", "logical_body": "38x66", "alpha": true, "anchor": "bottom-center", "filtering": "nearest", "mipmap": false, "state_frame_counts_ref": "vehicle_states"},
+      "visual_locks": ["boxy-van-silhouette", "yellow-paint-variant", "long-window-band"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "vehicle_npc_pickup",
+      "category": "vehicle",
+      "role": "pickup NPC vehicle family",
+      "runtime_key": "PICKUP",
+      "path": "assets/vehicles/vehicle_npc_pickup_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_canvas": "44x72", "logical_body": "36x62", "alpha": true, "anchor": "bottom-center", "filtering": "nearest", "mipmap": false, "state_frame_counts_ref": "vehicle_states"},
+      "visual_locks": ["pickup-bed-silhouette", "orange-paint-variant", "cargo-detail"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "vehicle_npc_truck",
+      "category": "vehicle",
+      "role": "truck NPC vehicle family",
+      "runtime_key": "TRUCK",
+      "path": "assets/vehicles/vehicle_npc_truck_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_canvas": "52x84", "logical_body": "42x75", "alpha": true, "anchor": "bottom-center", "filtering": "nearest", "mipmap": false, "state_frame_counts_ref": "vehicle_states"},
+      "visual_locks": ["large-truck-silhouette", "green-paint-variant", "heavy-shadow"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "vehicle_npc_bus",
+      "category": "vehicle",
+      "role": "bus NPC vehicle family",
+      "runtime_key": "BUS",
+      "path": "assets/vehicles/vehicle_npc_bus_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_canvas": "56x96", "logical_body": "46x88", "alpha": true, "anchor": "bottom-center", "filtering": "nearest", "mipmap": false, "state_frame_counts_ref": "vehicle_states"},
+      "visual_locks": ["long-bus-silhouette", "pink-paint-variant", "window-strip"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+
+    {
+      "id": "item_oil_leak",
+      "category": "item",
+      "role": "oil leak icon and world hazard",
+      "runtime_key": "OIL LEAK",
+      "path": "assets/items/item_oil_leak_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"icon_dimensions": "24x24", "world_canvas": "48x24", "alpha": true, "anchor": "center", "filtering": "nearest", "mipmap": false, "phase_frame_counts_ref": "item_phases"},
+      "visual_locks": ["slippery-verb", "hard-reflection-clusters", "low-contrast-road-fit"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "item_sofa_drop",
+      "category": "item",
+      "role": "sofa drop icon and lane blocker",
+      "runtime_key": "SOFA DROP",
+      "path": "assets/items/item_sofa_drop_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"icon_dimensions": "24x24", "world_canvas": "56x36", "alpha": true, "anchor": "center", "filtering": "nearest", "mipmap": false, "phase_frame_counts": {"preview": 2, "commit": 4, "impact": 6, "cleanup": 4}},
+      "visual_locks": ["blocking-verb", "warm-fabric", "dust-burst"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "item_rolling_tire",
+      "category": "item",
+      "role": "rolling tire icon and moving hazard",
+      "runtime_key": "ROLLING TIRE",
+      "path": "assets/items/item_rolling_tire_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"icon_dimensions": "24x24", "world_canvas": "24x24", "alpha": true, "anchor": "center", "filtering": "nearest", "mipmap": false, "phase_frame_counts": {"preview": 2, "commit": 4, "impact": 8, "cleanup": 4}},
+      "visual_locks": ["rolling-verb", "rubber-material", "cross-lane-read"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "item_fake_turn_signal",
+      "category": "item",
+      "role": "fake turn signal icon and player overlay",
+      "runtime_key": "FAKE TURN SIGNAL",
+      "path": "assets/items/item_fake_turn_signal_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"icon_dimensions": "24x24", "world_canvas": "16x16", "alpha": true, "anchor": "center", "filtering": "nearest", "mipmap": false, "phase_frame_counts_ref": "item_phases"},
+      "visual_locks": ["misdirection-verb", "amber-arrow", "left-right-symmetry"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "item_roadwork_sign",
+      "category": "item",
+      "role": "roadwork sign icon and closure hazard",
+      "runtime_key": "ROADWORK SIGN",
+      "path": "assets/items/item_roadwork_sign_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"icon_dimensions": "24x24", "world_canvas": "48x40", "alpha": true, "anchor": "bottom-center", "filtering": "nearest", "mipmap": false, "phase_frame_counts_ref": "item_phases"},
+      "visual_locks": ["closure-verb", "warning-amber", "stepped-hatch"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "item_giant_mattress",
+      "category": "item",
+      "role": "giant mattress icon and falling hazard",
+      "runtime_key": "GIANT MATTRESS",
+      "path": "assets/items/item_giant_mattress_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"icon_dimensions": "24x24", "world_canvas": "64x40", "alpha": true, "anchor": "center", "filtering": "nearest", "mipmap": false, "phase_frame_counts": {"preview": 4, "commit": 6, "impact": 12, "cleanup": 4}},
+      "visual_locks": ["falling-verb", "soft-fabric-block", "large-impact"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "item_fake_brake_light",
+      "category": "item",
+      "role": "fake brake light icon and tail-light overlay",
+      "runtime_key": "FAKE BRAKE LIGHT",
+      "path": "assets/items/item_fake_brake_light_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"icon_dimensions": "24x24", "world_canvas": "16x8", "alpha": true, "anchor": "center", "filtering": "nearest", "mipmap": false, "phase_frame_counts_ref": "item_phases"},
+      "visual_locks": ["misdirection-verb", "danger-coral", "blink-rhythm"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "item_wide_body",
+      "category": "item",
+      "role": "wide body icon and player body variant",
+      "runtime_key": "WIDE BODY",
+      "path": "assets/items/item_wide_body_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"icon_dimensions": "24x24", "world_canvas": "48x68", "alpha": true, "anchor": "bottom-center", "filtering": "nearest", "mipmap": false, "phase_frame_counts_ref": "item_phases"},
+      "visual_locks": ["body-expansion-verb", "player-orange", "collision-cost-read"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "item_pickup_mystery",
+      "category": "item",
+      "role": "automatic pickup marker",
+      "runtime_key": "PICKUP",
+      "path": "assets/items/item_pickup_mystery_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "32x32", "alpha": true, "frames": 4, "anchor": "center", "filtering": "nearest", "mipmap": false, "repeat": false},
+      "visual_locks": ["interactive-mint", "mystery-silhouette", "no-color-only-read"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+
+    {
+      "id": "vfx_accident_rubber_band_slide",
+      "category": "vfx",
+      "role": "rubber-band side slide accident template",
+      "path": "assets/vfx/vfx_accident_rubber_band_slide_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "80x64 frame", "alpha": true, "frames": 8, "anchor": "vehicle-bottom-center", "filtering": "nearest", "mipmap": false},
+      "visual_locks": ["vehicle-identity", "sideways-stretch", "tire-trail"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "vfx_accident_spring_roll",
+      "category": "vfx",
+      "role": "spring roll accident template",
+      "path": "assets/vfx/vfx_accident_spring_roll_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "80x80 frame", "alpha": true, "frames": 12, "anchor": "vehicle-bottom-center", "filtering": "nearest", "mipmap": false},
+      "visual_locks": ["stepped-rotation", "large-shadow", "compressed-landing"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "vfx_accident_accordion_crash",
+      "category": "vfx",
+      "role": "accordion rear-end chain template",
+      "path": "assets/vfx/vfx_accident_accordion_crash_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "96x64 frame", "alpha": true, "frames": 12, "anchor": "vehicle-bottom-center", "filtering": "nearest", "mipmap": false},
+      "visual_locks": ["queue-readable", "front-car-compression", "chain-number-space"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "vfx_common_feedback_atlas",
+      "category": "vfx",
+      "role": "shared pixel feedback effects",
+      "path": "assets/vfx/vfx_common_feedback_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "16x16 tile family", "alpha": true, "anchor": "center", "filtering": "nearest", "mipmap": false, "frame_groups": {"skid_mark": 4, "dust": 4, "spark": 4, "debris": 6, "pixel_smoke": 6, "warning_arrow": 4, "hit_flash": 2, "chain_marker": 4}},
+      "visual_locks": ["finite-pixel-clusters", "no-soft-particles", "small-medium-large-budget"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+
+    {
+      "id": "ui_panel_atlas",
+      "category": "ui",
+      "role": "pixel panel and border nine-slice pieces",
+      "path": "assets/ui/ui_panel_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "16x16 corner and edge tiles", "alpha": true, "anchor": "nine-slice", "filtering": "nearest", "mipmap": false, "states": ["normal", "selected", "warning", "disabled"]},
+      "visual_locks": ["two-pixel-border", "dark-panel", "no-glass-gradient"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "ui_item_slot_atlas",
+      "category": "ui",
+      "role": "three-slot item frame states",
+      "path": "assets/ui/ui_item_slot_atlas.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "112x32 slot family", "alpha": true, "anchor": "top-left", "filtering": "nearest", "mipmap": false, "states": ["empty", "normal", "selected", "cooldown", "passive", "disabled"]},
+      "visual_locks": ["slot-number-area", "icon-safe-area", "state-by-border-and-value"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "ui_upgrade_card_frame",
+      "category": "ui",
+      "role": "upgrade choice card frame",
+      "path": "assets/ui/ui_upgrade_card_frame.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "148x106", "alpha": true, "anchor": "top-left", "filtering": "nearest", "mipmap": false, "states": ["normal", "focused", "selected"]},
+      "visual_locks": ["behavior-first-card", "accent-top-border", "integer-pop"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "ui_result_frame",
+      "category": "ui",
+      "role": "pause, replacement and result overlay frame",
+      "path": "assets/ui/ui_result_frame.png",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"logical_dimensions": "480x196", "alpha": true, "anchor": "center", "filtering": "nearest", "mipmap": false, "states": ["pause", "replacement", "result", "failure"]},
+      "visual_locks": ["strong-title-band", "clear-focus-border", "no-baked-dynamic-copy"],
+      "source_ref": "planned_source",
+      "verification_ref": "planned_verification"
+    },
+    {
+      "id": "ui_font_zh_pixel",
+      "category": "font",
+      "role": "licensed Chinese pixel font at fixed UI sizes",
+      "path": "assets/ui/ui_font_zh_pixel.tres",
+      "status": "planned",
+      "priority": "P0",
+      "technical": {"format": "Godot Font resource or bitmap font atlas", "sizes": [12, 16, 20, 24, 32], "alpha": true, "filtering": "nearest", "mipmap": false, "required_glyph_source": "HUD, item names, driver states, road events and accident messages"},
+      "visual_locks": ["Chinese-support", "fixed-baseline", "no-antialiasing"],
+      "source": {"kind": "planned_external_open_source_rasterized", "url_or_tool": "", "creator": "", "created_at": "2026-09-15", "license": "to verify before use", "attribution": "to verify before use", "prompt_or_source_record": "", "edit_history": "External font requires license verification and fixed-size rasterization."},
+      "verification": {"native_scale_reviewed": false, "in_engine_reviewed": false, "technical_checks_passed": false, "approved_by": "", "notes": "Arial Unicode MS remains graybox-only fallback."}
+    },
+
+    {
+      "id": "item_banana_cart", "category": "item", "role": "future item content stub", "runtime_key": "BANANA CART", "path": "assets/items/item_banana_cart_atlas.png", "status": "planned", "priority": "P2", "notes": "Backlog only; no formal art in this iteration."},
+    {
+      "id": "item_long_trailer", "category": "item", "role": "future item content stub", "runtime_key": "LONG TRAILER", "path": "assets/items/item_long_trailer_atlas.png", "status": "planned", "priority": "P2", "notes": "Backlog only; no formal art in this iteration."},
+    {
+      "id": "item_popcorn_machine", "category": "item", "role": "future item content stub", "runtime_key": "POPCORN MACHINE", "path": "assets/items/item_popcorn_machine_atlas.png", "status": "planned", "priority": "P2", "notes": "Backlog only; no formal art in this iteration."},
+    {
+      "id": "item_broken_trunk", "category": "item", "role": "future item content stub", "runtime_key": "BROKEN TRUNK", "path": "assets/items/item_broken_trunk_atlas.png", "status": "planned", "priority": "P2", "notes": "Backlog only; no formal art in this iteration."},
+    {
+      "id": "item_magnet", "category": "item", "role": "future item content stub", "runtime_key": "MAGNET", "path": "assets/items/item_magnet_atlas.png", "status": "planned", "priority": "P2", "notes": "Backlog only; no formal art in this iteration."},
+    {
+      "id": "item_paint_leak", "category": "item", "role": "future item content stub", "runtime_key": "PAINT LEAK", "path": "assets/items/item_paint_leak_atlas.png", "status": "planned", "priority": "P2", "notes": "Backlog only; no formal art in this iteration."},
+    {
+      "id": "item_fake_police_light", "category": "item", "role": "future item content stub", "runtime_key": "FAKE POLICE LIGHT", "path": "assets/items/item_fake_police_light_atlas.png", "status": "planned", "priority": "P2", "notes": "Backlog only; no formal art in this iteration."},
+    {
+      "id": "item_overloaded_rack", "category": "item", "role": "future item content stub", "runtime_key": "OVERLOADED RACK", "path": "assets/items/item_overloaded_rack_atlas.png", "status": "planned", "priority": "P2", "notes": "Backlog only; no formal art in this iteration."},
+    {
+      "id": "item_inflatable_pool", "category": "item", "role": "future item content stub", "runtime_key": "INFLATABLE POOL", "path": "assets/items/item_inflatable_pool_atlas.png", "status": "planned", "priority": "P2", "notes": "Backlog only; no formal art in this iteration."},
+    {
+      "id": "item_rogue_shopping_cart", "category": "item", "role": "future item content stub", "runtime_key": "ROGUE SHOPPING CART", "path": "assets/items/item_rogue_shopping_cart_atlas.png", "status": "planned", "priority": "P2", "notes": "Backlog only; no formal art in this iteration."},
+    {
+      "id": "item_black_smoke", "category": "item", "role": "future item content stub", "runtime_key": "BLACK SMOKE", "path": "assets/items/item_black_smoke_atlas.png", "status": "planned", "priority": "P2", "notes": "Backlog only; no formal art in this iteration."},
+    {
+      "id": "item_slow_mode", "category": "item", "role": "future item content stub", "runtime_key": "SLOW MODE", "path": "assets/items/item_slow_mode_atlas.png", "status": "planned", "priority": "P2", "notes": "Backlog only; no formal art in this iteration."},
+    {
+      "id": "item_snake_swerve", "category": "item", "role": "future item content stub", "runtime_key": "SNAKE SWERVE", "path": "assets/items/item_snake_swerve_atlas.png", "status": "planned", "priority": "P2", "notes": "Backlog only; no formal art in this iteration."},
+    {
+      "id": "item_nail_rain", "category": "item", "role": "future item content stub", "runtime_key": "NAIL RAIN", "path": "assets/items/item_nail_rain_atlas.png", "status": "planned", "priority": "P2", "notes": "Backlog only; no formal art in this iteration."},
+    {
+      "id": "item_moving_roadblock", "category": "item", "role": "future item content stub", "runtime_key": "MOVING ROADBLOCK", "path": "assets/items/item_moving_roadblock_atlas.png", "status": "planned", "priority": "P2", "notes": "Backlog only; no formal art in this iteration."},
+
+    {
       "id": "ui_font_graybox",
-      "path": "ui_font.ttf",
+      "category": "font",
       "role": "temporary graybox UI font",
-      "format": "ttf",
-      "family": "Arial Unicode MS",
-      "filter": "not_approved_for_production_pixel_ui",
-      "source": "existing graybox file; provenance to verify",
-      "license": "to verify",
-      "status": "placeholder; replace with a Chinese pixel font"
+      "runtime_key": "GRAYBOX_FONT",
+      "path": "ui_font.ttf",
+      "status": "approved",
+      "approval_scope": "graybox_only",
+      "priority": "P0",
+      "technical": {"format": "ttf", "alpha": true, "filtering": "engine_default", "mipmap": false},
+      "source": {"kind": "existing_graybox_file", "url_or_tool": "local file; provenance not verified", "creator": "unknown", "created_at": "", "license": "to verify", "attribution": "to verify", "prompt_or_source_record": "", "edit_history": "Retained as a fallback only."},
+      "verification": {"native_scale_reviewed": false, "in_engine_reviewed": true, "technical_checks_passed": true, "approved_by": "graybox baseline", "notes": "Arial Unicode MS is not approved for production pixel UI."}
     }
   ]
 }
